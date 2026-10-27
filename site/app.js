@@ -233,19 +233,26 @@ async function showHome() {
   sidebar(index, null);
   document.title = "Hupu LoL Ratings";
   const pick = (p, label) => `<span class="pick">${img(p.image, "", p.name)}<span><small>${label} · ${gameName(p.game)}</small>${esc(p.name)} <span class="${tone(p.avg)}">${p.avg.toFixed(1)}</span></span></span>`;
+  // One section per tournament stage, newest stage first, same grouping as the sidebar.
+  const sections = new Map();
+  for (const m of index.matches) {
+    const key = eventName(m.event);
+    if (!sections.has(key)) sections.set(key, []);
+    sections.get(key).push(m);
+  }
   app.innerHTML = `${header("Hupu LoL Ratings", `<p class="updated">Last updated: ${date(index.updated)}</p>`)}
-    <div class="cards">${index.matches.map((m) => {
+    ${[...sections].map(([stage, list]) => `<h2 class="section">${esc(stage)}</h2><div class="cards">${list.map((m) => {
       const [a, b] = m.teams;
       // MVP and LVP each sit under their own team's side.
       const s = m.standouts?.mvp?.team ? m.standouts : null;
       const picksFor = (t) => s ? [[s.mvp, "MVP"], [s.worst, "LVP"]].filter(([p]) => p.team === t.id).map(([p, l]) => pick(p, l)).join("") : "";
       const side = (t, cls) => `<div class="team ${cls} ${m.winner && t.id !== m.winner ? "lost" : ""}">${cls === "away" ? esc(t.name) + img(t.logo) : img(t.logo) + esc(t.name)}</div>`;
       return `<a class="card" href="#/m/${m.id}">
-        <div class="meta"><span>${esc(eventName(m.event))}</span><span>${date(m.start)}</span></div>
+        <div class="meta"><span>Best of ${Math.max(a.score, b.score) * 2 - 1}</span><span>${date(m.start)}</span></div>
         <div class="versus">${side(a, "left")}<div class="score">${a.score} – ${b.score}</div>${side(b, "away")}</div>
         ${s ? `<div class="picks"><div class="col">${picksFor(a)}</div><div class="col away">${picksFor(b)}</div></div>` : ""}
       </a>`;
-    }).join("")}</div>`;
+    }).join("")}</div>`).join("")}`;
 }
 
 async function showAbout() {
