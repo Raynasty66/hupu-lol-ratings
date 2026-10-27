@@ -67,4 +67,7 @@ Each builder has Gemini propose entries and Groq confirm them; only entries both
 
 ## Data
 
+The Hupu endpoints, their parameters and the fields this project uses are documented in [HUPU_API.md](HUPU_API.md).
+
+
 All data comes from Hupu's public, read-only endpoints; nothing logs in or posts. Scores are Hupu's 0–10 scale (a 5-star vote counts as 10). MVP and LVP are the highest- and lowest-rated players by Hupu's full-match score, among players with at least 50 votes.
