@@ -126,6 +126,7 @@ async function main() {
       m.series = await hupu.seriesScores(m.id).catch(() => m.series ?? []);
       m.standouts = standouts(saved.games, m.series);
     }
+    index.updated = Date.now();
     await writeFile(new URL("index.json", DATA), JSON.stringify(index));
     console.log(`reindexed ${index.matches.length} matches`);
     return;

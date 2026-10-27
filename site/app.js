@@ -253,8 +253,9 @@ async function showAbout() {
   document.title = "About · Hupu LoL Ratings";
   app.innerHTML = `${header("About this site")}<div class="about">
     <p>After every pro League of Legends game, fans on <a class="hupu" href="https://www.hupu.com/" target="_blank" rel="noopener">Hupu</a> (虎扑) rate each player, coach, caster and ban from 1 to 5 stars and comment. This site collects each entry's most-liked comments and their replies.</p>
-    <p>Gemini translates them, and a second model on Groq checks every translation; a comment shows in English once it passes. Champion names come from Riot's official Chinese and English lists.</p>
-    <p>Scores are Hupu's 0–10 scale. Locations are the commenter's province as Hupu shows it.</p></div>`;
+    <p>Gemini translates the comments.</p>
+    <h2>Contact</h2>
+    <p>For issues, suggestions, or any other feedback, reach out to <a class="hupu" href="https://www.reddit.com/user/Raynasty66/" target="_blank" rel="noopener">u/Raynasty66</a> on Reddit.</p></div>`;
 }
 
 app.addEventListener("click", (e) => {
