@@ -35,7 +35,7 @@ jobs:
         run: timeout 120m node pipeline/translate.js || true
       - name: Check translations
         # A second model reviews finished translations; rejected ones are cleared for the next step.
-        run: timeout 150m node pipeline/translate.js --check || true
+        run: timeout 30m node pipeline/translate.js --check || true
       - name: Retranslate rejected
         run: timeout 30m node pipeline/translate.js || true
       - name: Refresh MVP and LVP
