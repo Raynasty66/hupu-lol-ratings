@@ -9,7 +9,7 @@ RULES:
 - Items with `replyTo` are replies; `replyTo` is the Chinese comment they answer, for context only. Translate only `zh`.
 - If an item has `fix`, an earlier translation was rejected for that reason; avoid that mistake.
 - If a comment contains a bracketed emote code, copy it unchanged into the same spot; never add emote codes that are not in that comment.
-- Never use pinyin in `en`.
+- Never use pinyin in `en`, and never add the star rating or any tag that is not in the comment.
 - If a phrase is a meme, slang, nickname or wordplay an English fan would not get, wrap its English in [~N:phrase] with N counting from 0 per comment, and add a note for it. At most 3 notes per comment; ordinary words get none.
 - Every [~N:...] marker needs a note with the same N, and every note needs its marker.
 
