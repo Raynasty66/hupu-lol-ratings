@@ -1,16 +1,25 @@
-// Chinese fan nicknames for pro players (e.g. 圣枪哥 = Flandre), from the checked list in nicknames.json.
+// Checked glossaries for the prompt: player nicknames (圣枪哥 = Flandre), team names (滔搏 = TES) and esports terms (VCTCN).
 import { readFile } from "node:fs/promises";
 
-let table = null;
+const lists = {};
+
+async function list(file) {
+  lists[file] ??= JSON.parse(await readFile(new URL(file, import.meta.url), "utf8").catch(() => "{}"));
+  return lists[file];
+}
 
 export async function nicknames() {
-  if (!table) table = JSON.parse(await readFile(new URL("nicknames.json", import.meta.url), "utf8"));
-  return table;
+  return list("nicknames.json");
 }
 
 export async function nicknameGlossary(texts) {
-  const joined = texts.join(" ");
-  return Object.entries(await nicknames())
-    .filter(([nick]) => joined.includes(nick))
-    .map(([nick, id]) => `${nick} = ${id}`);
+  // Emote codes like [虎扑表情-手动狗头] never count as mentions.
+  const joined = texts.join(" ").replace(/\[[^\]]*\]/g, "");
+  const lower = joined.toLowerCase();
+  const hit = (k) => joined.includes(k) || lower.includes(k.toLowerCase());
+  return [
+    ...Object.entries(await list("nicknames.json")).filter(([k]) => hit(k)).map(([k, v]) => `${k} = player ${v}`),
+    ...Object.entries(await list("team-nicknames.json")).filter(([k]) => hit(k)).map(([k, v]) => `${k} = team ${v}`),
+    ...Object.entries(await list("terms.json")).filter(([k]) => hit(k)).map(([k, v]) => `${k} = ${v} (add a note explaining it)`),
+  ];
 }

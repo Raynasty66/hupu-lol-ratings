@@ -71,7 +71,7 @@ function sidebar(index, current) {
   }
   nav.innerHTML = [...groups].map(([g, list]) => `<div class="group">${esc(g)}</div>${list.map((m) => {
     const active = current?.match === m.id;
-    const games = active ? `<div class="nav-games">${[...m.games].sort((a, b) => a.name.localeCompare(b.name)).map((g) =>
+    const games = active ? `<div class="nav-games">${(current.tabs ?? [...m.games].sort((a, b) => a.name.localeCompare(b.name))).map((g) =>
       `<a href="#/m/${m.id}/${g.id}" class="${g.id === current.game ? "active" : ""}">${gameName(g.name)}</a>`).join("")}</div>` : "";
     return `<a class="nav-match ${active ? "active" : ""}" href="#/m/${m.id}">
       <span><b>${esc(score(m))}</b><small>${shortDate(m.start)} · ${m.games.length} ${m.games.length === 1 ? "game" : "games"}</small></span>
@@ -107,10 +107,10 @@ function comment(c, it, isReply) {
   const about = !isReply && !view.player ? `<span class="who">${img(it.image, "", it.name)}${esc(it.en ?? it.name)}</span>` : "";
   const thread = c.thread ?? [];
   return `<div class="c">
-    <div class="c-top">${about}${c.user ? `<span class="user">${esc(c.user)}</span>` : ""}${c.to ? `<span class="to">→ ${esc(c.to)}</span>` : ""}${stars}<span class="date">${c.time ? shortDate(c.time) : ""}</span></div>
+    <div class="c-top">${about}${c.user ? `<span class="user">${esc(c.user)}</span>` : ""}${c.to ? `<span class="to">→ ${esc(c.to)}</span>` : ""}${stars}${c.game && !isReply ? `<span class="tag">${c.game}</span>` : ""}<span class="date">${c.time ? shortDate(c.time) : ""}</span></div>
     ${textBlock(c)}
     <div class="c-foot"><span class="likes">${ICON.like}${c.likes.toLocaleString()}</span>
-      <a href="${HUPU}/score-item/lol_item/${it.id}" target="_blank" rel="noopener">${ICON.link}Link</a>
+      <a href="${HUPU}/score-item/lol_item/${c.item ?? it.link ?? it.id}" target="_blank" rel="noopener">${ICON.link}Link</a>
       ${c.ip ? `<span>${PROVINCES[c.ip] ?? "Outside China"}</span>` : ""}</div>
     ${thread.length ? `<button class="toggle" data-thread aria-expanded="false">${ICON.chevron}<span>Show ${thread.length} ${thread.length === 1 ? "reply" : "replies"}</span></button>
       <div class="thread" hidden>${thread.map((r) => comment(r, it, true)).join("")}</div>` : ""}
@@ -135,7 +135,7 @@ function breakdown(it) {
   const kd = it.kills != null ? ` · ${it.kills}/${it.deaths} K/D` : "";
   return `<div class="player">
     <div class="big ${tone(it.avg)}">${it.avg.toFixed(1)}</div>
-    <div><b>${esc(it.en ?? it.name)}</b><div class="meta">${it.raters.toLocaleString()} ratings · ${it.comments.toLocaleString()} comments${kd} · <a class="hupu" href="${HUPU}/score-item/lol_item/${it.id}" target="_blank" rel="noopener">Rate on Hupu ↗</a></div></div>
+    <div><b>${esc(it.en ?? it.name)}</b><div class="meta">${it.raters.toLocaleString()} ratings · ${it.comments.toLocaleString()} comments${kd} · <a class="hupu" href="${HUPU}/score-item/lol_item/${it.link ?? it.id}" target="_blank" rel="noopener">Rate on Hupu ↗</a></div></div>
     <div class="chart">${[10, 8, 6, 4, 2].map((k) => {
       const n = it.dist[k] ?? 0;
       return `<div class="row"><span>${k / 2}★</span><div class="bar"><i style="width:${(n / total) * 100}%;background:${COLORS[k]}"></i></div><span>${n.toLocaleString()} · ${Math.round((n / total) * 100)}%</span></div>`;
@@ -167,38 +167,61 @@ function renderFeed() {
 }
 
 const state = { game: null };
+const fullCache = new Map();
+
+// The whole-match view: each person once, with Hupu's 全场 score, votes summed across games and every game's comments.
+function fullMatch(m, games, entry) {
+  if (fullCache.has(m.id)) return fullCache.get(m.id);
+  const series = new Map((entry?.series ?? []).map((p) => [p.name, p]));
+  const merged = new Map();
+  for (const g of games) {
+    for (const it of g.items) {
+      if (it.type === "bpHero") continue;
+      let x = merged.get(it.name);
+      if (!x) merged.set(it.name, x = { ...it, id: `all-${it.id}`, link: it.id, top: [], dist: {}, raters: 0, comments: 0, weighted: 0, kills: null });
+      x.top.push(...it.top.map((c) => ({ ...c, game: gameName(g.name), item: it.id })));
+      for (const [k, n] of Object.entries(it.dist)) x.dist[k] = (x.dist[k] ?? 0) + n;
+      x.raters += it.raters;
+      x.comments += it.comments;
+      x.weighted += it.avg * it.raters;
+    }
+  }
+  const items = [...merged.values()].map((x) => {
+    const s = series.get(x.name);
+    return { ...x, avg: s ? s.avg : x.weighted / (x.raters || 1), raters: s ? s.raters : x.raters };
+  }).sort((a, b) => b.raters - a.raters);
+  const full = { id: "all", name: "Full match", full: true, items };
+  fullCache.set(m.id, full);
+  return full;
+}
 
 async function showMatch(id, gameId) {
   const [index, m] = await Promise.all([load("data/index.json"), load(`data/matches/${id}.json`)]);
+  const entry = index.matches.find((x) => x.id === m.id);
   const games = [...m.games].sort((a, b) => a.name.localeCompare(b.name));
-  const game = games.find((g) => g.id === gameId) ?? games[0];
+  // Series with more than one game open on the full-match tab.
+  const tabs = games.length > 1 ? [fullMatch(m, games, entry), ...games] : games;
+  const game = tabs.find((g) => g.id === gameId) ?? tabs[0];
   if (state.game !== game) Object.assign(view, { player: null, q: "", searching: false, shown: PAGE });
   state.game = game;
-  sidebar(index, { match: m.id, game: game?.id });
+  sidebar(index, { match: m.id, game: game?.id, tabs });
   document.title = `${vs(m)} · Hupu LoL Ratings`;
   const [a, b] = m.teams;
   const items = game ? game.items : [];
-  // Hupu's whole-series rating per player, shown when the series has more than one game.
-  const entry = index.matches.find((x) => x.id === m.id);
-  const faces = new Map(m.games.flatMap((g) => g.items.map((it) => [it.name, it.image])));
-  const series = games.length > 1 ? [...(entry?.series ?? [])].sort((x, y) => y.avg - x.avg) : [];
   app.innerHTML = `
     ${header(`${img(a.logo, "", a.name)}${esc(a.name)} ${a.score} – ${b.score} ${esc(b.name)}${img(b.logo, "", b.name)}`,
       `<p class="sub">${esc(eventName(m.event))}${game ? ` · ${gameName(game.name)}` : ""}${m.raters ? ` · ${raterCount(m.raters)} raters` : ""}</p>
        <p class="updated">Last updated: ${date(index.updated)}</p>`)}
-    ${series.length ? `<div class="label">Series</div>
-    <div class="chips">${series.map((p) => `<div class="chip static">${img(faces.get(p.name), "face", p.name)}
-      <span><b>${esc(p.name)}</b> <span class="score ${tone(p.avg)}">${p.avg.toFixed(1)}</span><small>${esc(m.teams.find((t) => t.id === p.team)?.name ?? "")} · ${p.raters.toLocaleString()} ratings</small></span></div>`).join("")}</div>` : ""}
-    ${game ? `<div class="label">${games.length > 1 ? `${gameName(game.name)} · ` : ""}${items.length} rated</div>
+    ${game ? `<div class="label">${tabs.length > 1 ? `${gameName(game.name)} · ` : ""}${items.length} rated</div>
     <div class="chips">
       <button class="chip all" data-player="" aria-pressed="${!view.player}">All</button>
       ${items.map((it) => `<button class="chip" data-player="${it.id}" aria-pressed="${view.player === it.id}">${img(it.image, "face", it.name)}
         <span><b>${esc(it.en ?? it.name)}</b> <span class="score ${tone(it.avg)}">${it.avg.toFixed(1)}</span><small>${it.raters.toLocaleString()} ratings</small></span></button>`).join("")}
     </div>` : ""}
     <div class="links">
-      ${games.map((g) => `<a class="btn" href="#/m/${m.id}/${g.id}" aria-pressed="${g === game}">${gameName(g.name)}</a>`).join("")}
+      ${tabs.map((g) => `<a class="btn" href="#/m/${m.id}/${g.id}" aria-pressed="${g === game}">${gameName(g.name)}</a>`).join("")}
       <a class="btn" href="${HUPU}/score-list/lol_match/${m.key.no}" target="_blank" rel="noopener">${ICON.out}Match on Hupu</a>
-      ${game ? `<a class="btn" href="${HUPU}/score-list/lol_bo/${game.id}" target="_blank" rel="noopener">${ICON.out}${gameName(game.name)} on Hupu</a>` : ""}
+      ${game && !game.full ? `<a class="btn" href="${HUPU}/score-list/lol_bo/${game.id}" target="_blank" rel="noopener">${ICON.out}${gameName(game.name)} on Hupu</a>` : ""}
     </div>
     <p class="disclaimer">Translations and annotations are AI-generated and may not be fully accurate.</p>
     <section id="feed-area"></section>`;
