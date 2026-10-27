@@ -145,6 +145,11 @@ img { display: block; }
 .note:hover .tip, .note:focus .tip { display: block; }
 .tip em { font-style: normal; opacity: 0.75; }
 
+.hupu { color: var(--accent); font-size: 13px; text-decoration: none; white-space: nowrap; }
+.hupu:hover { text-decoration: underline; }
+.tabs .hupu { align-self: center; margin-left: 6px; }
+.more { margin: 10px 0 2px; }
+
 .empty { color: var(--muted); padding: 40px 0; text-align: center; }
 
 @media (max-width: 560px) {

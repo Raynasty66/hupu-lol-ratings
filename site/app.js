@@ -19,6 +19,8 @@ const PROVINCES = {
   宁夏: "Ningxia", 新疆: "Xinjiang", 香港: "Hong Kong", 澳门: "Macau", 海外: "Overseas",
 };
 
+const HUPU = "https://m.hupu.com";
+const hupuLink = (path, text) => `<a class="hupu" href="${HUPU}${path}" target="_blank" rel="noopener">${text} ↗</a>`;
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 const img = (src, cls, alt = "") => (src ? `<img class="${cls}" src="${esc(src)}" alt="${esc(alt)}" loading="lazy" referrerpolicy="no-referrer">` : "");
 
@@ -78,7 +80,8 @@ function renderItem(it, teams) {
       <div class="who"><b>${esc(it.en ?? it.name)}</b><small>${esc(sub)}</small><div class="dist" title="1★ to 5★ share">${dist}</div></div>
       <div class="rating"><b class="${tone(it.avg)}">${it.avg.toFixed(1)}</b><small>${it.raters.toLocaleString()} ratings</small></div>
     </button>
-    <div class="comments" hidden>${it.top.length ? it.top.map(renderComment).join("") : `<p class="empty">No comments yet.</p>`}</div>
+    <div class="comments" hidden>${it.top.length ? it.top.map(renderComment).join("") : `<p class="empty">No comments yet.</p>`}
+      <p class="more">${hupuLink(`/score-item/lol_item/${it.id}`, `Rate it or read all ${it.comments.toLocaleString()} comments on Hupu`)}</p></div>
   </article>`;
 }
 
@@ -111,9 +114,11 @@ async function showMatch(id, gameId) {
   app.innerHTML = `
     <a class="back" href="#/">← All matches</a>
     <div class="head"><h1>${esc(a.name)} ${a.score} – ${b.score} ${esc(b.name)}</h1>
-      <div class="sub">${esc(eventName(m.event))} · ${date(m.start)}${m.raters ? ` · ${raterCount(m.raters)} raters` : ""}</div></div>
+      <div class="sub">${esc(eventName(m.event))} · ${date(m.start)}${m.raters ? ` · ${raterCount(m.raters)} raters` : ""}
+        · ${hupuLink(`/score-list/lol_match/${m.key.no}`, "Match on Hupu")}</div></div>
     <nav class="tabs">${[...m.games].sort((x, y) => x.name.localeCompare(y.name)).map((g) =>
-      `<a class="chip" href="#/m/${m.id}/${g.id}" aria-pressed="${g === game}">${esc(gameName(g.name))}</a>`).join("")}</nav>
+      `<a class="chip" href="#/m/${m.id}/${g.id}" aria-pressed="${g === game}">${esc(gameName(g.name))}</a>`).join("")}
+      ${game ? hupuLink(`/score-list/lol_bo/${game.id}`, `${gameName(game.name)} on Hupu`) : ""}</nav>
     <section class="items">${game ? game.items.map((it) => renderItem(it, m.teams)).join("") : `<p class="empty">No games rated yet.</p>`}</section>`;
 }
 
