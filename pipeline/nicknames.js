@@ -20,6 +20,6 @@ export async function nicknameGlossary(texts) {
   return [
     ...Object.entries(await list("nicknames.json")).filter(([k]) => hit(k)).map(([k, v]) => `${k} = player ${v}`),
     ...Object.entries(await list("team-nicknames.json")).filter(([k]) => hit(k)).map(([k, v]) => `${k} = team ${v}`),
-    ...Object.entries(await list("terms.json")).filter(([k]) => hit(k)).map(([k, v]) => `${k} = ${v} (add a note explaining it)`),
+    ...Object.entries(await list("terms.json")).filter(([k]) => hit(k)).map(([k, v]) => `${k} means ${v}; explain it in a note`),
   ];
 }
