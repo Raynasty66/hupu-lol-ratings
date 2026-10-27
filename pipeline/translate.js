@@ -9,8 +9,8 @@ import { backend, parseJson, QuotaError } from "./llm.js";
 const DATA = new URL("../site/data/matches/", import.meta.url);
 const args = Object.fromEntries(process.argv.slice(2).map((a) => { const [k, ...v] = a.replace(/^--/, "").split("="); return [k, v.length ? v.join("=") : true]; }));
 const BATCH = Number(args.batch ?? 50);
-// Groq's 8k tokens-a-minute cap can't take 50-comment batches, so it only checks.
-const LANES = String(args.lanes ?? (args.check ? "groq:2" : "gemini:3,gemini2:3,cloudflare:4")).split(",").map((s) => s.split(":"));
+// Groq's 8k tokens-a-minute cap can't take 50-comment batches, so it only checks; Cloudflare's free Qwen was too weak to translate.
+const LANES = String(args.lanes ?? (args.check ? "groq:2" : "gemini:3,gemini2:3,geminiB:3,geminiB2:3")).split(",").map((s) => s.split(":"));
 const CHECK = Boolean(args.check);
 const TRANSLATE = await readFile(new URL("prompt.md", import.meta.url), "utf8");
 const VERIFY = await readFile(new URL("verify.md", import.meta.url), "utf8");

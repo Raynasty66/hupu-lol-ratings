@@ -1,6 +1,16 @@
-// Official Chinese-to-English champion names from Riot's Data Dragon, so bans and glossaries are exact.
+// Official Chinese-to-English champion names from Riot's Data Dragon, plus checked fan nicknames (蝎子 = Skarner).
+import { readFile } from "node:fs/promises";
+
 const DDRAGON = "https://ddragon.leagueoflegends.com";
 let table = null;
+let fanNames = null;
+
+export async function championList() {
+  const [version] = await (await fetch(`${DDRAGON}/api/versions.json`)).json();
+  const zh = (await (await fetch(`${DDRAGON}/cdn/${version}/data/zh_CN/champion.json`)).json()).data;
+  const en = (await (await fetch(`${DDRAGON}/cdn/${version}/data/en_US/champion.json`)).json()).data;
+  return Object.keys(zh).map((id) => ({ en: en[id].name, title: zh[id].title.replace(/\s+/g, ""), epithet: zh[id].name.replace(/\s+/g, "") }));
+}
 
 export async function champions() {
   if (table) return table;
@@ -24,6 +34,10 @@ export async function banList(zh) {
 
 export async function glossary(texts) {
   const t = await champions();
-  const joined = texts.join(" ").replace(/\s+/g, "");
-  return [...t].filter(([zh]) => zh.length >= 2 && joined.includes(zh)).map(([zh, en]) => `${zh} = ${en}`);
+  fanNames ??= JSON.parse(await readFile(new URL("champion-nicknames.json", import.meta.url), "utf8").catch(() => "{}"));
+  // Emote codes like [虎扑表情-手动狗头] are not champion mentions.
+  const joined = texts.join(" ").replace(/\[[^\]]*\]/g, "").replace(/\s+/g, "");
+  return [...t, ...Object.entries(fanNames)]
+    .filter(([zh]) => zh.length >= 2 && joined.includes(zh))
+    .map(([zh, en]) => `${zh} may mean the champion ${en}`);
 }

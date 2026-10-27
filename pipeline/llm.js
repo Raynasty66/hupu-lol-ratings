@@ -4,7 +4,7 @@ import { readFileSync, existsSync } from "node:fs";
 const ENV = new URL("../.env", import.meta.url);
 if (existsSync(ENV)) {
   for (const line of readFileSync(ENV, "utf8").split(/\r?\n/)) {
-    const m = line.match(/^\s*([A-Z_]+)\s*=\s*(.*?)\s*$/);
+    const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*?)\s*$/);
     if (m && !process.env[m[1]]) process.env[m[1]] = m[2].replace(/^["']|["']$/g, "");
   }
 }
@@ -19,6 +19,15 @@ const BACKENDS = {
   gemini2: {
     url: "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
     key: "GEMINI_API_KEY", model: process.env.GEMINI2_MODEL ?? "gemini-3.1-flash-lite", rpm: 14,
+  },
+  // A second key from another Google project has its own free quota.
+  geminiB: {
+    url: "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+    key: "GEMINI_API_KEY_2", model: process.env.GEMINI_MODEL ?? "gemini-flash-lite-latest", rpm: 14,
+  },
+  geminiB2: {
+    url: "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+    key: "GEMINI_API_KEY_2", model: process.env.GEMINI2_MODEL ?? "gemini-3.1-flash-lite", rpm: 14,
   },
   groq: {
     url: "https://api.groq.com/openai/v1/chat/completions",
