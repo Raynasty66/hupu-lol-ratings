@@ -28,7 +28,7 @@ jobs:
         with:
           node-version: 22
       - name: Fetch new games
-        run: node pipeline/fetch.js --event=全球总决赛
+        run: node pipeline/fetch.js --event=全球总决赛 --refresh=1
       - name: Translate and check
         # Stops by itself when the free daily quotas run out.
         run: timeout 300m node pipeline/translate.js || true
