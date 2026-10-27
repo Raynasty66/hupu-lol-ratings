@@ -40,7 +40,8 @@ const date = (ms) => new Date(ms).toLocaleDateString(undefined, { month: "short"
 const shortDate = (ms) => new Date(ms).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 const gameName = (zh) => zh.replace(/第(\d+)局/, "Game $1");
 const vs = (m) => m.teams.map((t) => t.name).join(" vs ");
-const score = (m) => `${m.teams[0].name} ${m.teams[0].score}–${m.teams[1].score} ${m.teams[1].name}`;
+// The series format, which reveals nothing about the result (wins needed × 2 − 1).
+const bestOf = (m) => `Bo${Math.max(m.teams[0].score, m.teams[1].score) * 2 - 1}`;
 
 function eventName(zh) {
   const ev = EVENTS.find(([k]) => zh.includes(k))?.[1] ?? zh;
@@ -62,21 +63,37 @@ async function load(path) {
 // Match-page view settings.
 const view = { sort: "hot", lang: "en", q: "", searching: false, player: null, shown: PAGE };
 
+// Stages the reader has opened or closed in the sidebar; the current match's stage always starts open.
+const openStages = new Set();
+const closedStages = new Set();
+let lastSidebar = null;
+
 function sidebar(index, current) {
+  lastSidebar = [index, current];
   const groups = new Map();
   for (const m of index.matches) {
     const g = eventName(m.event);
     if (!groups.has(g)) groups.set(g, []);
     groups.get(g).push(m);
   }
-  nav.innerHTML = [...groups].map(([g, list]) => `<div class="group">${esc(g)}</div>${list.map((m) => {
+  const currentStage = [...groups].find(([, list]) => list.some((m) => m.id === current?.match))?.[0];
+  nav.innerHTML = [...groups].map(([g, list], i) => {
+    const open = !closedStages.has(g) && (openStages.has(g) || g === currentStage || (!currentStage && i === 0));
+    return `<button class="stage ${open ? "open" : ""}" data-stage="${esc(g)}" aria-expanded="${open}">
+      <span><b>${esc(g)}</b><small>${list.length} ${list.length === 1 ? "match" : "matches"}</small></span>${open ? ICON.chevron : ICON.right}</button>
+      ${open ? `<div class="stage-list">${stageMatches(list, current)}</div>` : ""}`;
+  }).join("");
+}
+
+function stageMatches(list, current) {
+  return list.map((m) => {
     const active = current?.match === m.id;
     const games = active ? `<div class="nav-games">${(current.tabs ?? [...m.games].sort((a, b) => a.name.localeCompare(b.name))).map((g) =>
       `<a href="#/m/${m.id}/${g.id}" class="${g.id === current.game ? "active" : ""}">${gameName(g.name)}</a>`).join("")}</div>` : "";
     return `<a class="nav-match ${active ? "active" : ""}" href="#/m/${m.id}">
-      <span><b>${esc(score(m))}</b><small>${shortDate(m.start)} · ${m.games.length} ${m.games.length === 1 ? "game" : "games"}</small></span>
+      <span><b>${esc(vs(m))}</b><small>${shortDate(m.start)} · ${bestOf(m)}</small></span>
       ${active ? ICON.chevron : ICON.right}</a>${games}`;
-  }).join("")}`).join("");
+  }).join("");
 }
 
 function header(title, sub) {
@@ -196,6 +213,15 @@ function fullMatch(m, games, entry) {
   return full;
 }
 
+// MVP and LVP of the match, each under its own team's side; shown only inside the match to avoid spoilers.
+function standoutsRow(m, entry) {
+  const s = entry?.standouts?.mvp?.team ? entry.standouts : null;
+  if (!s) return "";
+  const pick = (p, label) => `<span class="pick">${img(p.image, "", p.name)}<span><small>${label} · ${gameName(p.game)}</small>${esc(p.name)} <span class="${tone(p.avg)}">${p.avg.toFixed(1)}</span></span></span>`;
+  const picksFor = (t) => [[s.mvp, "MVP"], [s.worst, "LVP"]].filter(([p]) => p.team === t.id).map(([p, l]) => pick(p, l)).join("");
+  return `<div class="picks match-picks"><div class="col">${picksFor(m.teams[0])}</div><div class="col away">${picksFor(m.teams[1])}</div></div>`;
+}
+
 async function showMatch(id, gameId) {
   const [index, m] = await Promise.all([load("data/index.json"), load(`data/matches/${id}.json`)]);
   const entry = index.matches.find((x) => x.id === m.id);
@@ -213,6 +239,7 @@ async function showMatch(id, gameId) {
     ${header(`${img(a.logo, "", a.name)}${esc(a.name)} ${a.score} – ${b.score} ${esc(b.name)}${img(b.logo, "", b.name)}`,
       `<p class="sub">${esc(eventName(m.event))}${game ? ` · ${gameName(game.name)}` : ""}${m.raters ? ` · ${raterCount(m.raters)} raters` : ""}</p>
        <p class="updated">Last updated: ${date(index.updated)}</p>`)}
+    ${standoutsRow(m, entry)}
     ${game ? `<div class="label">${tabs.length > 1 ? `${gameName(game.name)} · ` : ""}${items.length} rated</div>
     <div class="chips">
       <button class="chip all" data-player="" aria-pressed="${!view.player}">All</button>
@@ -233,8 +260,7 @@ async function showHome() {
   const index = await load("data/index.json");
   sidebar(index, null);
   document.title = "Hupu LoL Ratings";
-  const pick = (p, label) => `<span class="pick">${img(p.image, "", p.name)}<span><small>${label} · ${gameName(p.game)}</small>${esc(p.name)} <span class="${tone(p.avg)}">${p.avg.toFixed(1)}</span></span></span>`;
-  // One section per tournament stage, newest stage first, same grouping as the sidebar.
+  // One section per tournament stage, newest stage first, same grouping as the sidebar; no scores or ratings here, to avoid spoilers.
   const sections = new Map();
   for (const m of index.matches) {
     const key = eventName(m.event);
@@ -244,14 +270,10 @@ async function showHome() {
   app.innerHTML = `${header("Hupu LoL Ratings", `<p class="updated">Last updated: ${date(index.updated)}</p>`)}
     ${[...sections].map(([stage, list]) => `<h2 class="section">${esc(stage)}</h2><div class="cards">${list.map((m) => {
       const [a, b] = m.teams;
-      // MVP and LVP each sit under their own team's side.
-      const s = m.standouts?.mvp?.team ? m.standouts : null;
-      const picksFor = (t) => s ? [[s.mvp, "MVP"], [s.worst, "LVP"]].filter(([p]) => p.team === t.id).map(([p, l]) => pick(p, l)).join("") : "";
-      const side = (t, cls) => `<div class="team ${cls} ${m.winner && t.id !== m.winner ? "lost" : ""}">${cls === "away" ? esc(t.name) + img(t.logo) : img(t.logo) + esc(t.name)}</div>`;
+      const side = (t, cls) => `<div class="team ${cls}">${cls === "away" ? esc(t.name) + img(t.logo) : img(t.logo) + esc(t.name)}</div>`;
       return `<a class="card" href="#/m/${m.id}">
-        <div class="meta"><span>Best of ${Math.max(a.score, b.score) * 2 - 1}</span><span>${date(m.start)}</span></div>
-        <div class="versus">${side(a, "left")}<div class="score">${a.score} – ${b.score}</div>${side(b, "away")}</div>
-        ${s ? `<div class="picks"><div class="col">${picksFor(a)}</div><div class="col away">${picksFor(b)}</div></div>` : ""}
+        <div class="meta"><span>${bestOf(m)}</span><span>${date(m.start)}</span></div>
+        <div class="versus">${side(a, "left")}<div class="score vs">vs</div>${side(b, "away")}</div>
       </a>`;
     }).join("")}</div>`).join("")}`;
 }
@@ -314,7 +336,18 @@ app.addEventListener("input", (e) => {
 });
 
 document.getElementById("scrim").addEventListener("click", () => document.body.classList.remove("nav-open"));
-nav.addEventListener("click", (e) => { if (e.target.closest("a")) document.body.classList.remove("nav-open"); });
+nav.addEventListener("click", (e) => {
+  const stage = e.target.closest("[data-stage]");
+  if (stage) {
+    const g = stage.dataset.stage;
+    const open = stage.getAttribute("aria-expanded") === "true";
+    (open ? closedStages : openStages).add(g);
+    (open ? openStages : closedStages).delete(g);
+    sidebar(...lastSidebar);
+    return;
+  }
+  if (e.target.closest("a")) document.body.classList.remove("nav-open");
+});
 
 // Theme: light, dark, or follow the system; remembered per browser when storage is allowed.
 function applyTheme(mode) {
