@@ -126,7 +126,8 @@ function units(match, g, it, pass) {
   for (const c of [...it.top].sort((a, b) => b.likes - a.likes).slice(pass.from, pass.to)) {
     for (const x of pass.replies ? (c.thread ?? []) : [c]) {
       if (!x.zh.trim()) continue;
-      if (REVIEW ? !x.en || x.reviewed : CHECK ? !x.en || x.verified : x.en) continue;
+      // Comments an editor already reviewed are final; the automatic check never overrides them.
+      if (REVIEW ? !x.en || x.reviewed : CHECK ? !x.en || x.verified || x.reviewed : x.en) continue;
       out.push({ id: x.id, about: it.en ?? it.name, zh: x.zh, score: x.score, parent: pass.replies ? c.zh : undefined, problem: x.problem, ref: x });
     }
   }
