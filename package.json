@@ -1,0 +1,14 @@
+{
+  "name": "hupu-lol-ratings",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Hupu's per-game LoL esports player ratings and fan comments, translated into English.",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "fetch": "node pipeline/fetch.js",
+    "translate": "node pipeline/translate.js",
+    "update": "node pipeline/fetch.js && node pipeline/translate.js",
+    "dev": "npx --yes serve@14.2.4 site -l 8787"
+  }
+}
