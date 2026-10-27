@@ -32,9 +32,12 @@ function clean(en, notes, zh) {
   const marked = new Set([...en.matchAll(/\[~(\d+):/g)].map((m) => Number(m[1])));
   const kept = (notes ?? []).filter((n) => marked.has(n.id));
   const ids = new Set(kept.map((n) => n.id));
-  const text = en.replace(/\[~(\d+):([^\]]*)\]/g, (all, id, phrase) => (ids.has(Number(id)) ? all : phrase));
-  return { en: text.replace(/&#39;/g, "'").replace(/&amp;/g, "&"), notes: kept };
+  // Keeps only well-formed [~N:phrase] markers that have a note; malformed ones like [~N:x] or [~0] become plain text.
+  const text = en.replace(/\[~([^\]:]*)(?::([^\]]*))?\]/g, (all, id, phrase = "") =>
+    (/^\d+$/.test(id) && ids.has(Number(id)) && phrase ? all : /^\d*$/.test(phrase) ? "" : phrase));
+  return { en: text.replace(/\s{2,}/g, " ").replace(/&#39;/g, "'").replace(/&amp;/g, "&").trim(), notes: kept };
 }
+
 
 async function terms(texts) {
   return [...(await nicknameGlossary(texts)), ...(await championGlossary(texts))];

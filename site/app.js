@@ -85,9 +85,10 @@ function header(title, sub) {
 
 function annotated(c) {
   const notes = new Map((c.notes ?? []).map((n) => [n.id, n]));
-  return esc(c.en).replace(/\[~(\d+):([^\]]*)\]/g, (all, id, phrase) => {
-    const n = notes.get(Number(id));
-    if (!n) return phrase;
+  // Any marker that isn't a well-formed [~N:phrase] with a note is shown as its plain phrase.
+  return esc(c.en).replace(/\[~([^\]:]*)(?::([^\]]*))?\]/g, (all, id, phrase = "") => {
+    const n = /^\d+$/.test(id) ? notes.get(Number(id)) : null;
+    if (!n) return /^\d*$/.test(phrase) ? "" : phrase;
     return `<span class="note" tabindex="0">${phrase}<span class="tip"><b>${esc(n.zh)}</b> ${n.pinyin ? `<em>${esc(n.pinyin)}</em>` : ""}<br>Literally “${esc(n.literal)}”. ${esc(n.context)}</span></span>`;
   });
 }
