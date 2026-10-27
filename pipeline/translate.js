@@ -194,7 +194,7 @@ async function main() {
       const job = queue.shift();
       try {
         const n = job.names
-          ? await translateBatch(lane.model, job).then(() => { for (const it of job.names) it.en = job.units.find((u) => u.zh === it.name)?.ref.en ?? it.en; return job.units.length; })
+          ? await translateBatch(lane.model, job).then(() => { for (const it of job.names) it.en = job.units.find((u) => u.zh === it.name)?.ref.en?.replace(/\[~[^\]:]*:([^\]]*)\]/g, "$1") ?? it.en; return job.units.length; })
           : CHECK ? await checkBatch(lane.model, job) : REVIEW ? await reviewBatch(lane.model, job) : await translateBatch(lane.model, job);
         ok += n;
         done += job.units.length;
