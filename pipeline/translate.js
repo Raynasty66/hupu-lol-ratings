@@ -79,10 +79,8 @@ async function checkBatch(model, job) {
       u.ref.verified = `${u.ref.by ?? "?"} + ${model.model}`;
       n++;
     } else {
-      // Rejected: drop the English so the next run retranslates it with the reason attached.
+      // Rejected: marked for retranslation with the reason attached; the old English stays up until a new one lands.
       u.ref.problem = v.problem || "rejected by checker";
-      delete u.ref.en;
-      delete u.ref.notes;
     }
   }
   return n;
@@ -127,7 +125,7 @@ function units(match, g, it, pass) {
     for (const x of pass.replies ? (c.thread ?? []) : [c]) {
       if (!x.zh.trim()) continue;
       // Comments an editor already reviewed are final; the automatic check never overrides them.
-      if (REVIEW ? !x.en || x.reviewed : CHECK ? !x.en || x.verified || x.reviewed : x.en) continue;
+      if (REVIEW ? !x.en || x.reviewed : CHECK ? !x.en || x.verified || x.reviewed || x.problem : x.en && !x.problem) continue;
       out.push({ id: x.id, about: it.en ?? it.name, zh: x.zh, score: x.score, parent: pass.replies ? c.zh : undefined, problem: x.problem, ref: x });
     }
   }
