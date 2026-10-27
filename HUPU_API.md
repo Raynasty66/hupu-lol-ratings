@@ -1,154 +1,169 @@
 # Hupu LoL ratings API
 
-These are the endpoints this project reads from. Hupu (虎扑) does not publish an API: they are the unofficial JSON endpoints its own app and mobile site call. They need no login or key, return JSON, and can change without notice. Everything here was tested on 2026-10-27.
+Six endpoints, called in this order: schedule → match → game → rated person → comments. No login or key is needed.
 
-The request format was worked out from two open-source projects, [Miaopu](https://github.com/Kindness-Net/Miaopu) (`HupuAdapter.kt`) and [RiftLog](https://github.com/Ayoa5/RiftLog), and confirmed by calling the endpoints. The client in this repo is [`pipeline/hupu.js`](pipeline/hupu.js).
+## Terms
 
-## How the data fits together
-
-```
-schedule (match-api.hupu.com)
- └─ match ── scoreItemKey { outBizType: "lol_match", outBizNo }
-     └─ rating tree (games.mobileapi.hupu.com)
-         └─ lol_match ──children──> lol_bo (one per game: 第1局, 第2局…)
-                                     └──children──> lol_item (each player, coach, caster, co-streamer, and each team's bans)
-                                                     ├─ comments (paged, newest first)
-                                                     ├─ hottest comments (~26 most liked)
-                                                     └─ replies to one comment
-match ── matchId ──> full-match (全场) player scores
-```
-
-Every rated thing is addressed by a pair: `outBizType` (`lol_match`, `lol_bo`, `lol_item`) and `outBizNo` (its id).
-
-## Common details
-
-- **Hosts:** `match-api.hupu.com` (schedule) and `games.mobileapi.hupu.com` (ratings and comments).
-- **Version in the path:** URLs carry an app version (`/1/8.2.99/`, `/1/8.2.58/`, `/1/8.2.10/`). These are the versions that work; others may too.
-- **Headers:** a normal `User-Agent` is enough here. RiftLog reports that Hupu's web pages (not these JSON endpoints) return a different structure to desktop browsers, so a mobile UA is the safe choice.
-- **Response wrapper:** ratings and comments return `{ code, msg, data, success }` with `code: 1` on success; the schedule returns `{ result, success }`.
-- **Scores** are on a 0–10 scale: one star is 2, five stars is 10.
-- **Be polite:** this project waits 300 ms between requests and retries with backoff.
+| Term | Meaning |
+|---|---|
+| `outBizType` / `outBizNo` | Every rated thing is addressed by a type and an id. You pass both to most endpoints. |
+| `lol_match` | A whole series, e.g. BLG vs KC. |
+| `lol_bo` | One game inside a series ("bo" as in best-of). Named `第1局` = Game 1, `第2局` = Game 2. |
+| `lol_item` | One rated entry inside a game: a player, coach (`教练`), caster (`解说`), co-streamer (`二路`) or a team's bans. |
+| `bpHero` | The `infoJson.type` of an entry that is a team's ban list rather than a person. |
+| `matchId` | The schedule's id for a match, used only by the full-match scores endpoint. |
+| `publishTime` | Paging cursor for comments, a time in milliseconds. |
+| `lightCount` | Likes ("lights" on Hupu). |
+| score | 0–10 scale: one star = 2, five stars = 10. |
 
 ## 1. Schedule
 
-`GET https://match-api.hupu.com/1/8.2.10/matchallapi/bff/standard/getScheduleListByTagForH5`
+```bash
+curl "https://match-api.hupu.com/1/8.2.10/matchallapi/bff/standard/getScheduleListByTagForH5?businessType=common&businessId=lol&datasource=navigation"
+```
 
-| Parameter | Value |
-|---|---|
-| `businessType` | `common` |
-| `businessId` | `lol` (other esports: `kog`, `cs2`, `val`) |
-| `datasource` | `navigation` |
+Returns about two months of matches, nested by day. One match:
 
-Returns roughly two months of matches nested by day. Each match object has:
+```json
+{
+  "matchId": "1693138570756096",
+  "matchIntroduction": "全球总决赛瑞士轮",
+  "matchStartTimeStamp": "1793037600000",
+  "matchStatus": "COMPLETED",
+  "againstInfo": {
+    "memberInfos": [
+      { "memberId": "57", "memberName": "BLG", "memberBaseScore": "1" },
+      { "memberId": "853996080463872", "memberName": "KC", "memberBaseScore": "0" }
+    ],
+    "winnerMemberId": "57"
+  },
+  "scoreCountText": "9.0万人评分",
+  "scoreItemKey": { "outBizType": "lol_match", "outBizNo": "4608" }
+}
+```
 
-| Field | Meaning |
-|---|---|
-| `matchId` | Match id, also used for the full-match scores (endpoint 6) |
-| `matchIntroduction` / `matchName` | Event and stage in Chinese, e.g. `全球总决赛瑞士轮` (Worlds Swiss stage) |
-| `matchStartTimeStamp` | Start time in ms |
-| `matchStatus` | `NOTSTARTED`, `INPROGRESS` or `COMPLETED` |
-| `againstInfo.memberInfos[]` | The two teams: `memberId`, `memberName`, `memberLogo`, `memberBaseScore` (games won) |
-| `againstInfo.winnerMemberId` | Winning team id |
-| `scoreCountText` | Rater count as text, e.g. `6.3万人评分` (万 = 10,000) |
-| `scoreItemKey` | `{ outBizType: "lol_match", outBizNo }`, the entry point into the rating tree |
+- `scoreItemKey` is what you pass to endpoint 2.
+- `memberBaseScore` is games won; `scoreCountText` is the rater count (万 = 10,000).
+- `matchStatus` is `NOTSTARTED`, `INPROGRESS` or `COMPLETED`.
 
-## 2. Rating tree (children of a node)
+## 2. Games in a match, or entries in a game
 
-`GET https://games.mobileapi.hupu.com/1/8.2.99/bplcommentapi/bpl/score_tree/getCurAndSubNodeByBizKey`
+Same endpoint for both levels. Pass a `lol_match` to get its games:
 
-| Parameter | Value |
-|---|---|
-| `outBizType`, `outBizNo` | The node to expand |
-| `relation` | `CHILD` |
-| `page`, `pageSize` | `1`, `100` |
+```bash
+curl "https://games.mobileapi.hupu.com/1/8.2.99/bplcommentapi/bpl/score_tree/getCurAndSubNodeByBizKey?outBizType=lol_match&outBizNo=4608&relation=CHILD&page=1&pageSize=100"
+```
 
-Called on a `lol_match` it returns the games (`lol_bo`); called on a game it returns everything rated in it (`lol_item`). Children are in `data.pageResult.data[].node`:
+```json
+{ "data": { "pageResult": { "data": [
+  { "node": { "bizType": "lol_bo", "bizId": "7909", "name": "第1局" } }
+] } } }
+```
 
-| Field | Meaning |
-|---|---|
-| `bizType`, `bizId` | This child's `outBizType` / `outBizNo` |
-| `name` | Display name (player ID, `教练 X` coach, `解说：X` caster, `二路：X` co-stream, or a ban list like `蔚/奇亚娜/…`) |
-| `scoreAvg` | Average score, 0–10 |
-| `scorePersonCount` | Number of ratings |
-| `commentCount` | Number of comments |
-| `scoreDistribution` | Votes per score: `{ "2": n, "4": n, "6": n, "8": n, "10": n }` |
-| `image[0]` | Photo |
-| `infoJson.type[0]` | `player`, `bpHero` (a ban list), or other roles |
-| `infoJson.teamId[0]` | The player's team (matches `memberId` in the schedule) |
-| `infoJson.killCount[0]`, `infoJson.deathCount[0]` | Kills and deaths in that game |
-| `infoJson.auxiliaryPic[0]` | The champion played (image) |
+Pass a `lol_bo` to get everyone rated in that game:
 
-There is no separate full-match node: a `lol_match`'s children are only its games.
+```bash
+curl "https://games.mobileapi.hupu.com/1/8.2.99/bplcommentapi/bpl/score_tree/getCurAndSubNodeByBizKey?outBizType=lol_bo&outBizNo=7909&relation=CHILD&page=1&pageSize=100"
+```
+
+```json
+{ "data": { "pageResult": { "data": [
+  { "node": {
+      "bizType": "lol_item", "bizId": "80012", "name": "Bin",
+      "scoreAvg": 9.7, "scorePersonCount": 20951, "commentCount": 3278,
+      "scoreDistribution": { "2": 636, "4": 73, "6": 106, "8": 230, "10": 19906 },
+      "infoJson": { "type": ["player"], "teamId": ["57"], "killCount": ["4"], "deathCount": ["1"] }
+  } },
+  { "node": { "bizType": "lol_item", "bizId": "80006", "name": "蔚/奇亚娜/辛德拉/卡西奥佩娅/烈娜塔 · 戈拉斯克",
+      "infoJson": { "type": ["bpHero"] } } }
+] } } }
+```
+
+- `bizType` + `bizId` are the next call's `outBizType` + `outBizNo`.
+- `scoreDistribution` is votes per score (2 = one star … 10 = five stars).
+- `teamId` matches `memberId` from the schedule.
 
 ## 3. Comments, newest first
 
-`GET https://games.mobileapi.hupu.com/1/8.2.99/bplcommentapi/bpl/comment/list/primarySingleRow`
+```bash
+curl "https://games.mobileapi.hupu.com/1/8.2.99/bplcommentapi/bpl/comment/list/primarySingleRow?outBizType=lol_item&outBizNo=80012&order=desc&publishTime=1793050000000&clientCode=&cid="
+```
 
-| Parameter | Value |
-|---|---|
-| `outBizType`, `outBizNo` | Usually a `lol_item` |
-| `order` | `desc` (newest first) or `asc` |
-| `publishTime` | Cursor in ms: start with the current time, then use `data.cursor.publishTime` from the previous page |
-| `clientCode`, `cid` | Empty strings |
+```json
+{ "data": {
+  "comments": [
+    { "commentId": "3023283006", "commentContent": "[加油][加油]", "commentUserName": "虎扑JR0582696408",
+      "score": 10, "lightCount": 0, "ipLocation": "重庆", "publishTime": 1793049043325, "subCommentCount": 0 }
+  ],
+  "cursor": { "publishTime": 1793045648078 },
+  "commentCount": 3008
+} }
+```
 
-Returns 10 top-level comments per page in `data.comments[]` (replies are not included), plus `data.cursor`, `data.commentCount` and `data.hasMore`. **Keep paging until a page comes back empty**; `hasMore` was not reliable in testing. There is no "sort by likes" order, so to get the most-liked comments this project pages through all of them and sorts by `lightCount`.
+- Returns 10 comments per call. For the next page, call again with `publishTime` = `cursor.publishTime`. Start with the current time.
+- Stop when `comments` comes back empty (don't rely on `hasMore`).
+- There is no sort by likes. To get the most-liked, page through all of them and sort by `lightCount`.
+- `score` is the commenter's own rating; `ipLocation` is their province.
 
-Each comment:
+## 4. Most-liked comments (quick)
 
-| Field | Meaning |
-|---|---|
-| `commentId` | Comment id |
-| `commentContent` | Text; Hupu emotes appear as codes like `[捂脸]` or `[虎扑表情-这就叫专业]` |
-| `commentUserName` | Username |
-| `score` | The commenter's own rating, 2–10 (0 or missing if none) |
-| `lightCount` | Likes ("lights" on Hupu) |
-| `ipLocation` | Province, in Chinese (e.g. `广东`); places outside China appear by their own name |
-| `publishTime` | Time in ms |
-| `subCommentCount` | Number of replies |
-| `parentCommentId`, `parentCommentUserName` | For replies, who they answer |
+```bash
+curl "https://games.mobileapi.hupu.com/1/8.2.99/bplcommentapi/bpl/comment/list/primarySingleRow/hottest?outBizType=lol_item&outBizNo=80012&clientCode="
+```
 
-## 4. Hottest comments
+Returns about 26–28 popular comments in one call, same fields as endpoint 3:
 
-`GET https://games.mobileapi.hupu.com/1/8.2.99/bplcommentapi/bpl/comment/list/primarySingleRow/hottest`
-
-Parameters: `outBizType`, `outBizNo`, `clientCode` (empty). Returns about 26 of the most-liked comments, not strictly in like order, with the same fields as endpoint 3. Fine for a quick look; it stops short of a full top 30.
+```json
+{ "data": [ { "commentId": "3022761803", "commentContent": "bin！", "lightCount": 2777, "subCommentCount": 16 } ] }
+```
 
 ## 5. Replies to a comment
 
-`GET https://games.mobileapi.hupu.com/1/8.2.99/bplcommentapi/bpl/comment/list/primarySingleRow/getMore`
+```bash
+curl "https://games.mobileapi.hupu.com/1/8.2.99/bplcommentapi/bpl/comment/list/primarySingleRow/getMore?outBizType=lol_item&outBizNo=80012&parentCommentId=3022761803&publishTime=0&pageSize=50&clientCode=&cid="
+```
 
-| Parameter | Value |
-|---|---|
-| `outBizType`, `outBizNo` | The rated item the comment belongs to |
-| `parentCommentId` | The top-level comment's id |
-| `publishTime` | `0` for the first page |
-| `pageSize` | Up to `50` |
-| `clientCode`, `cid` | Empty strings |
+```json
+{ "data": { "comments": [
+  { "commentId": "3022689082", "commentContent": "不如shy哥", "parentCommentId": "3022761803",
+    "parentCommentUserName": "虎扑JR0055857005", "lightCount": 7 }
+] } }
+```
 
-Returns the whole thread in `data.comments[]`, including replies to replies. A reply whose `parentCommentId` is not the top-level comment's id is answering another reply; `parentCommentUserName` says whom.
+- `pageSize` up to 50.
+- If `parentCommentId` isn't the comment you asked about, that reply answers another reply; `parentCommentUserName` says whom.
 
 ## 6. Full-match (全场) player scores
 
-`GET https://games.mobileapi.hupu.com/1/8.2.58/player/v1/lol/getAllPlayerScore?matchId=<matchId>`
+```bash
+curl "https://games.mobileapi.hupu.com/1/8.2.58/player/v1/lol/getAllPlayerScore?matchId=1693138570756096"
+```
 
-Hupu's own rating of each player over the whole series, the number its app shows on the 全场 tab. `data.teamScoreInfo[]` has one entry per team (`teamId`, `home`) with `playerInfo[]`:
+```json
+{ "data": {
+  "scoreCount": 89561,
+  "teamScoreInfo": [
+    { "teamId": 57, "home": true, "playerInfo": [
+      { "playerName": "Viper", "playerScore": 9.2, "playerScoreNum": 14879, "playerLocation": "BOT", "isSubstitution": false }
+    ] }
+  ]
+} }
+```
 
-| Field | Meaning |
-|---|---|
-| `playerName` | Player ID |
-| `playerScore` | Full-match score, 0–10 |
-| `playerScoreNum` | Number of ratings |
-| `playerLocation` | Role: `TOP`, `JUN`, `MID`, `BOT`, `SUP` |
-| `isSubstitution` | Whether the player is a sub |
+- Takes the schedule's `matchId`, not `outBizNo`.
+- One score per player for the whole series; `playerLocation` is `TOP`, `JUN`, `MID`, `BOT` or `SUP`.
+- Players only, no coaches or casters. Comments only exist per game (endpoint 3).
 
-It covers players only, not coaches or casters, and the comments for a full match live under its individual games: Hupu has no separate full-match comment section.
+## Calling it from JavaScript
 
-## Links back to Hupu
+```js
+const BASE = "https://games.mobileapi.hupu.com/1/8.2.99/bplcommentapi";
 
-These mobile web pages open in any browser and match the API ids:
+const res = await fetch(`${BASE}/bpl/score_tree/getCurAndSubNodeByBizKey?` + new URLSearchParams({
+  outBizType: "lol_bo", outBizNo: "7909", relation: "CHILD", page: 1, pageSize: 100,
+}));
+const people = (await res.json()).data.pageResult.data.map((x) => x.node);
+console.log(people.map((p) => `${p.name}: ${p.scoreAvg}`));
+```
 
-- Match: `https://m.hupu.com/score-list/lol_match/<outBizNo>`
-- Game: `https://m.hupu.com/score-list/lol_bo/<bizId>`
-- Player, coach or caster: `https://m.hupu.com/score-item/lol_item/<bizId>`
-
-Images on Hupu's CDN (`hoopchina.com.cn`) load in normal browsers but return 403 to headless Chrome's default user agent.
+The full client this project uses is [`pipeline/hupu.js`](pipeline/hupu.js). Request formats were worked out from [Miaopu](https://github.com/Kindness-Net/Miaopu) and [RiftLog](https://github.com/Ayoa5/RiftLog).
