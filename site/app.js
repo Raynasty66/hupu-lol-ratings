@@ -178,11 +178,18 @@ async function showMatch(id, gameId) {
   document.title = `${vs(m)} · Hupu LoL Ratings`;
   const [a, b] = m.teams;
   const items = game ? game.items : [];
+  // Hupu's whole-series rating per player, shown when the series has more than one game.
+  const entry = index.matches.find((x) => x.id === m.id);
+  const faces = new Map(m.games.flatMap((g) => g.items.map((it) => [it.name, it.image])));
+  const series = games.length > 1 ? [...(entry?.series ?? [])].sort((x, y) => y.avg - x.avg) : [];
   app.innerHTML = `
     ${header(`${img(a.logo, "", a.name)}${esc(a.name)} ${a.score} – ${b.score} ${esc(b.name)}${img(b.logo, "", b.name)}`,
       `<p class="sub">${esc(eventName(m.event))}${game ? ` · ${gameName(game.name)}` : ""}${m.raters ? ` · ${raterCount(m.raters)} raters` : ""}</p>
        <p class="updated">Last updated: ${date(index.updated)}</p>`)}
-    ${game ? `<div class="label">${items.length} rated</div>
+    ${series.length ? `<div class="label">Series</div>
+    <div class="chips">${series.map((p) => `<div class="chip static">${img(faces.get(p.name), "face", p.name)}
+      <span><b>${esc(p.name)}</b> <span class="score ${tone(p.avg)}">${p.avg.toFixed(1)}</span><small>${esc(m.teams.find((t) => t.id === p.team)?.name ?? "")} · ${p.raters.toLocaleString()} ratings</small></span></div>`).join("")}</div>` : ""}
+    ${game ? `<div class="label">${games.length > 1 ? `${gameName(game.name)} · ` : ""}${items.length} rated</div>
     <div class="chips">
       <button class="chip all" data-player="" aria-pressed="${!view.player}">All</button>
       ${items.map((it) => `<button class="chip" data-player="${it.id}" aria-pressed="${view.player === it.id}">${img(it.image, "face", it.name)}

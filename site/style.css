@@ -215,3 +215,5 @@ main { min-width: 0; padding: 28px 56px 60px; max-width: 1100px; }
   .feed { padding: 4px 14px; }
   .cards { grid-template-columns: 1fr; }
 }
+.chip.static { cursor: default; }
+.chip.static:hover { border-color: var(--border); }
