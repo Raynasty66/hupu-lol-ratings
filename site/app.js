@@ -60,6 +60,8 @@ async function load(path) {
   return cache.get(path);
 }
 
+let spoilers = false;
+
 // Match-page view settings.
 const view = { sort: "hot", lang: "en", q: "", searching: false, player: null, shown: PAGE };
 
@@ -91,7 +93,7 @@ function stageMatches(list, current) {
     const games = active ? `<div class="nav-games">${(current.tabs ?? [...m.games].sort((a, b) => a.name.localeCompare(b.name))).map((g) =>
       `<a href="#/m/${m.id}/${g.id}" class="${g.id === current.game ? "active" : ""}">${gameName(g.name)}</a>`).join("")}</div>` : "";
     return `<a class="nav-match ${active ? "active" : ""}" href="#/m/${m.id}">
-      <span><b>${esc(vs(m))}</b><small>${shortDate(m.start)} · ${bestOf(m)}</small></span>
+      <span><b>${esc(spoilers ? `${m.teams[0].name} ${m.teams[0].score}–${m.teams[1].score} ${m.teams[1].name}` : vs(m))}</b><small>${shortDate(m.start)} · ${bestOf(m)}</small></span>
       ${active ? ICON.chevron : ICON.right}</a>${games}`;
   }).join("");
 }
@@ -270,10 +272,12 @@ async function showHome() {
   app.innerHTML = `${header("Hupu LoL Ratings", `<p class="updated">Last updated: ${date(index.updated)}</p>`)}
     ${[...sections].map(([stage, list]) => `<h2 class="section">${esc(stage)}</h2><div class="cards">${list.map((m) => {
       const [a, b] = m.teams;
-      const side = (t, cls) => `<div class="team ${cls}">${cls === "away" ? esc(t.name) + img(t.logo) : img(t.logo) + esc(t.name)}</div>`;
+      const lost = (t) => spoilers && m.winner && t.id !== m.winner ? "lost" : "";
+      const side = (t, cls) => `<div class="team ${cls} ${lost(t)}">${cls === "away" ? esc(t.name) + img(t.logo) : img(t.logo) + esc(t.name)}</div>`;
       return `<a class="card" href="#/m/${m.id}">
         <div class="meta"><span>${bestOf(m)}</span><span>${date(m.start)}</span></div>
-        <div class="versus">${side(a, "left")}<div class="score vs">vs</div>${side(b, "away")}</div>
+        <div class="versus">${side(a, "left")}${spoilers ? `<div class="score">${a.score} – ${b.score}</div>` : `<div class="score vs">vs</div>`}${side(b, "away")}</div>
+        ${spoilers ? standoutsRow(m, m).replace("picks match-picks", "picks") : ""}
       </a>`;
     }).join("")}</div>`).join("")}`;
 }
@@ -359,7 +363,18 @@ function applyTheme(mode) {
 document.querySelectorAll("[data-theme-set]").forEach((b) => b.addEventListener("click", () => applyTheme(b.dataset.themeSet)));
 applyTheme(document.documentElement.dataset.theme ?? "system");
 
-async function route() {
+// Spoilers: hidden by default; when shown, scores and MVP/LVP also appear in the sidebar and on the home cards.
+function applySpoilers(on, rerender) {
+  spoilers = on;
+  try { localStorage.setItem("spoilers", on ? "on" : "off"); } catch {}
+  document.querySelectorAll("[data-spoilers]").forEach((b) => b.setAttribute("aria-pressed", String((b.dataset.spoilers === "on") === on)));
+  if (rerender) route(false);
+}
+document.querySelectorAll("[data-spoilers]").forEach((b) => b.addEventListener("click", () => applySpoilers(b.dataset.spoilers === "on", true)));
+try { spoilers = localStorage.getItem("spoilers") === "on"; } catch {}
+applySpoilers(spoilers, false);
+
+async function route(scroll) {
   const [, kind, a, b] = location.hash.split("/");
   try {
     if (kind === "m") await showMatch(a, b);
@@ -368,7 +383,7 @@ async function route() {
   } catch {
     app.innerHTML = `<p class="empty">Couldn't load that page.</p>`;
   }
-  window.scrollTo(0, 0);
+  if (scroll !== false) window.scrollTo(0, 0);
 }
 
 addEventListener("hashchange", route);

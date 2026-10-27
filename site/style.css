@@ -232,3 +232,7 @@ main { min-width: 0; padding: 28px 56px 60px; max-width: 1100px; }
 .stage-list .nav-match { padding-left: 24px; }
 .match-picks { margin-top: 14px; max-width: 560px; border-top: 0; padding-top: 0; }
 .versus .vs { color: var(--muted-fg); font-weight: 500; font-size: 15px; }
+.setting { display: grid; gap: 4px; }
+.setting > span { font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted-fg); }
+.theme button { font-size: 12.5px; }
+.theme.two { grid-template-columns: repeat(2, 1fr); }

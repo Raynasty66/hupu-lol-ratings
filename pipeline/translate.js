@@ -1,5 +1,5 @@
 // Translates every pending comment in big batches, spread across several free model backends at once.
-// With --check, it instead reviews finished translations with a second model and retranslates the rejected ones.
+// With --check, a second model passes or rejects finished translations; with --review, an editor model returns corrected ones.
 import { readFile, readdir, writeFile } from "node:fs/promises";
 import { existsSync, readFileSync } from "node:fs";
 import { banList, glossary as championGlossary } from "./champions.js";
@@ -8,12 +8,14 @@ import { backend, parseJson, QuotaError } from "./llm.js";
 
 const DATA = new URL("../site/data/matches/", import.meta.url);
 const args = Object.fromEntries(process.argv.slice(2).map((a) => { const [k, ...v] = a.replace(/^--/, "").split("="); return [k, v.length ? v.join("=") : true]; }));
-const BATCH = Number(args.batch ?? 50);
+const REVIEW = Boolean(args.review);
+const BATCH = Number(args.batch ?? (REVIEW ? 25 : 50));
 // Groq's 8k tokens-a-minute cap can't take 50-comment batches, so it only checks; Cloudflare's free Qwen was too weak to translate.
 const LANES = String(args.lanes ?? (args.check ? "groq:2" : "gemini:3,gemini2:3,geminiB:3,geminiB2:3")).split(",").map((s) => s.split(":"));
 const CHECK = Boolean(args.check);
 const TRANSLATE = await readFile(new URL("prompt.md", import.meta.url), "utf8");
 const VERIFY = await readFile(new URL("verify.md", import.meta.url), "utf8");
+const EDIT = await readFile(new URL("review.md", import.meta.url), "utf8");
 const LOCK = new URL("fetching.lock", DATA);
 
 const hasChinese = (s) => /[㐀-鿿]/.test(s);
@@ -86,6 +88,28 @@ async function checkBatch(model, job) {
   return n;
 }
 
+// The editor pass: keeps a translation it approves, otherwise takes its corrected English and notes.
+async function reviewBatch(model, job) {
+  const input = job.units.map((u) => ({ id: u.id, about: u.about, zh: u.zh, en: u.ref.en, notes: u.ref.notes ?? [] }));
+  const reply = parseJson(await model.chat(fill(EDIT, job.ctx, input, await terms(job.units.map((u) => u.zh)))));
+  const out = new Map((reply.items ?? []).map((x) => [String(x.id), x]));
+  let n = 0;
+  for (const u of job.units) {
+    const v = out.get(u.id);
+    if (!v) continue;
+    if (v.ok !== true) {
+      if (!v.en) continue;
+      const fixed = clean(v.en, v.notes, u.zh);
+      const emotes = u.zh.match(/\[[^\]\[]{1,30}\]/g) ?? [];
+      if (hasChinese(emotes.reduce((s, e) => s.split(e).join(""), fixed.en))) continue;
+      Object.assign(u.ref, fixed, { edited: true });
+    }
+    u.ref.reviewed = model.model;
+    n++;
+  }
+  return n;
+}
+
 async function nameEntries(match) {
   for (const it of match.games.flatMap((g) => g.items)) {
     if (it.type === "bpHero") it.en = (await banList(it.name)) ?? it.en;
@@ -94,14 +118,15 @@ async function nameEntries(match) {
 }
 
 // Passes over every match: each entry's 10 most-liked comments, then the rest of its top 30, then replies.
-const PASSES = [{ from: 0, to: 10 }, { from: 10, to: 30 }, { from: 0, to: 30, replies: true }];
+const PASSES = [{ from: 0, to: 10 }, { from: 10, to: 30 }, { from: 0, to: 30, replies: true }]
+  .filter((p) => !REVIEW || Boolean(p.replies) === Boolean(args.replies));
 
 function units(match, g, it, pass) {
   const out = [];
   for (const c of [...it.top].sort((a, b) => b.likes - a.likes).slice(pass.from, pass.to)) {
     for (const x of pass.replies ? (c.thread ?? []) : [c]) {
       if (!x.zh.trim()) continue;
-      if (CHECK ? !x.en || x.verified : x.en) continue;
+      if (REVIEW ? !x.en || x.reviewed : CHECK ? !x.en || x.verified : x.en) continue;
       out.push({ id: x.id, about: it.en ?? it.name, zh: x.zh, score: x.score, parent: pass.replies ? c.zh : undefined, problem: x.problem, ref: x });
     }
   }
@@ -123,7 +148,7 @@ async function main() {
   const queue = [];
   for (const m of matches) {
     const names = await nameEntries(m.data);
-    if (names.length && !CHECK) {
+    if (names.length && !CHECK && !REVIEW) {
       const unique = [...new Set(names.map((it) => it.name))];
       queue.push({
         m, names, ctx: { target: "these rating entries (player, coach, caster or champion-ban names; 解说 caster, 二路 co-stream, 教练 coach, 替补 sub, 场内主持 host)", match: m.data.teams.map((t) => t.name).join(" vs "), game: "the whole series" },
@@ -144,7 +169,7 @@ async function main() {
     }
   }
   const total = queue.reduce((s, j) => s + j.units.length, 0);
-  console.log(`${CHECK ? "checking" : "translating"} ${total} comments in ${queue.length} batches`);
+  console.log(`${REVIEW ? "reviewing" : CHECK ? "checking" : "translating"} ${total} comments in ${queue.length} batches`);
 
   // Writes changed match files every few seconds so progress survives an interruption.
   const flush = async () => {
@@ -170,7 +195,7 @@ async function main() {
       try {
         const n = job.names
           ? await translateBatch(lane.model, job).then(() => { for (const it of job.names) it.en = job.units.find((u) => u.zh === it.name)?.ref.en ?? it.en; return job.units.length; })
-          : CHECK ? await checkBatch(lane.model, job) : await translateBatch(lane.model, job);
+          : CHECK ? await checkBatch(lane.model, job) : REVIEW ? await reviewBatch(lane.model, job) : await translateBatch(lane.model, job);
         ok += n;
         done += job.units.length;
         job.m.dirty = true;
@@ -187,7 +212,7 @@ async function main() {
   }));
   clearInterval(timer);
   await flush();
-  console.log(`${ok} ${CHECK ? "verified" : "translated"} of ${total}; ${queue.reduce((s, j) => s + j.units.length, 0)} left in queue`);
+  console.log(`${ok} ${REVIEW ? "reviewed" : CHECK ? "verified" : "translated"} of ${total}; ${queue.reduce((s, j) => s + j.units.length, 0)} left in queue`);
 }
 
 main().catch((e) => {
