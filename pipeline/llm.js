@@ -1,4 +1,4 @@
-// One chat interface over the free backends: Gemini, Groq, OpenRouter and local Ollama.
+// One chat interface over the free backends: Gemini, Groq, Cloudflare Workers AI, OpenRouter and local Ollama.
 import { readFileSync, existsSync } from "node:fs";
 
 const ENV = new URL("../.env", import.meta.url);
@@ -13,11 +13,21 @@ const BACKENDS = {
   gemini: {
     url: "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
     // Full Flash models allow only 20 free requests a day, so Flash-Lite does the volume.
-    key: "GEMINI_API_KEY", model: process.env.GEMINI_MODEL ?? "gemini-flash-lite-latest,gemini-3.1-flash-lite", rpm: 10,
+    key: "GEMINI_API_KEY", model: process.env.GEMINI_MODEL ?? "gemini-flash-lite-latest", rpm: 14,
+  },
+  // Each Gemini model has its own free quota, so the second one runs as a separate lane.
+  gemini2: {
+    url: "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+    key: "GEMINI_API_KEY", model: process.env.GEMINI2_MODEL ?? "gemini-3.1-flash-lite", rpm: 14,
   },
   groq: {
     url: "https://api.groq.com/openai/v1/chat/completions",
     key: "GROQ_API_KEY", model: process.env.GROQ_MODEL ?? "qwen/qwen3.8-27b,openai/gpt-oss-120b", rpm: 20, tpm: 7000,
+  },
+  cloudflare: {
+    url: `https://api.cloudflare.com/client/v4/accounts/${process.env.CLOUDFLARE_ACCOUNT_ID}/ai/v1/chat/completions`,
+    key: "CLOUDFLARE_AI_TOKEN", needs: "CLOUDFLARE_ACCOUNT_ID",
+    model: process.env.CLOUDFLARE_MODEL ?? "@cf/qwen/qwen3-30b-a3b-fp8", rpm: 300,
   },
   openrouter: {
     url: "https://openrouter.ai/api/v1/chat/completions",
@@ -36,7 +46,7 @@ export class QuotaError extends Error {}
 export function backend(name) {
   const b = BACKENDS[name];
   if (!b) throw new Error(`unknown backend ${name}`);
-  if (b.key && !process.env[b.key]) throw new Error(`${b.key} is not set (put it in .env)`);
+  for (const k of [b.key, b.needs]) if (k && !process.env[k]) throw new Error(`${k} is not set (put it in .env)`);
   let last = 0;
   const window = [];
   // Comma-separated models are fallbacks: free quotas are per model, and one may be overloaded.
@@ -61,17 +71,23 @@ export function backend(name) {
     },
     async once(prompt) {
       // Spaces requests by the free tier's per-minute limits on requests and, for Groq, tokens.
+      // Slots are claimed before waiting, so parallel lanes on one backend never double-book a slot.
       const tokens = Math.ceil(prompt.length / 1.5) + 1500;
       for (;;) {
         const now = Date.now();
         while (window.length && now - window[0].t > 60000) window.shift();
         const used = window.reduce((s, w) => s + w.tokens, 0);
-        const wait = Math.max(last + 60000 / b.rpm - now, b.tpm && used + tokens > b.tpm ? window[0].t + 60000 - now : 0);
-        if (wait <= 0) break;
-        await sleep(wait);
+        const tokenWait = b.tpm && window.length && used + tokens > b.tpm ? window[0].t + 60000 - now : 0;
+        if (tokenWait > 0) {
+          await sleep(tokenWait);
+          continue;
+        }
+        const slot = Math.max(now, last + 60000 / b.rpm);
+        last = slot;
+        window.push({ t: slot, tokens });
+        if (slot > now) await sleep(slot - now);
+        break;
       }
-      last = Date.now();
-      window.push({ t: last, tokens });
       let strict = true;
       for (let attempt = 1; ; attempt++) {
         const res = await fetch(b.url, {

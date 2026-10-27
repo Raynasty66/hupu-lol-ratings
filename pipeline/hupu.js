@@ -47,6 +47,14 @@ export async function schedule() {
   });
 }
 
+// Hupu's own whole-series rating for every player in a match.
+export async function seriesScores(matchId) {
+  const data = await get("https://games.mobileapi.hupu.com/1/8.2.58/player/v1/lol/getAllPlayerScore", { matchId });
+  return (data.teamScoreInfo ?? []).flatMap((t) => (t.playerInfo ?? []).map((p) => ({
+    name: p.playerName, team: String(t.teamId), avg: p.playerScore, raters: p.playerScoreNum, role: p.playerLocation,
+  })));
+}
+
 export async function children(type, no) {
   const data = await get(`${SCORE}/bpl/score_tree/getCurAndSubNodeByBizKey`, {
     outBizType: type, outBizNo: no, relation: "CHILD", page: 1, pageSize: 100,

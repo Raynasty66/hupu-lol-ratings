@@ -100,13 +100,18 @@ async function pool(tasks, n) {
   return out;
 }
 
-// Highest- and lowest-rated players of the series, among entries with enough votes to mean something.
-function standouts(games) {
-  const players = games.flatMap((g) => g.items.filter((it) => it.type === "player" && it.raters >= 300)
-    .map((it) => ({ name: it.en ?? it.name, avg: it.avg, game: g.name, image: it.image, team: it.team })));
+// Highest- and lowest-rated players over the whole series, from Hupu's series ratings when it has them.
+// A 50-vote floor only screens out near-empty entries, and ties go to the more-rated player.
+function standouts(games, series) {
+  const image = new Map(games.flatMap((g) => g.items.map((it) => [it.name, it.image])));
+  const players = series?.length
+    ? series.filter((p) => p.raters >= 50).map((p) => ({ ...p, game: games.length > 1 ? "Series" : games[0]?.name, image: image.get(p.name) ?? null }))
+    : games.flatMap((g) => g.items.filter((it) => it.type === "player" && it.raters >= 50)
+      .map((it) => ({ name: it.en ?? it.name, avg: it.avg, raters: it.raters, game: g.name, image: it.image, team: it.team })));
   if (!players.length) return null;
-  players.sort((a, b) => b.avg - a.avg);
-  return { mvp: players[0], worst: players[players.length - 1] };
+  const mvp = [...players].sort((a, b) => b.avg - a.avg || b.raters - a.raters)[0];
+  const worst = [...players].sort((a, b) => a.avg - b.avg || b.raters - a.raters)[0];
+  return { mvp, worst };
 }
 
 async function main() {
@@ -114,10 +119,12 @@ async function main() {
   const index = await readJson(new URL("index.json", DATA), { matches: [] });
   const known = new Map(index.matches.map((m) => [m.id, m]));
   if (args.reindex !== undefined) {
-    // Recomputes each match's MVP/LVP from the saved files, without touching Hupu.
+    // Recomputes each match's MVP/LVP from the saved files, pulling only the series ratings from Hupu.
     for (const m of index.matches) {
       const saved = await readJson(new URL(`matches/${m.id}.json`, DATA), null);
-      if (saved) m.standouts = standouts(saved.games);
+      if (!saved) continue;
+      m.series = await hupu.seriesScores(m.id).catch(() => m.series ?? []);
+      m.standouts = standouts(saved.games, m.series);
     }
     await writeFile(new URL("index.json", DATA), JSON.stringify(index));
     console.log(`reindexed ${index.matches.length} matches`);
@@ -146,7 +153,8 @@ async function main() {
       games.push({ id: String(g.bizId), name: g.name, items });
     }
     await writeFile(file, JSON.stringify({ ...m, games }));
-    known.set(m.id, { ...m, full: true, standouts: standouts(games), games: games.map((g) => ({ id: g.id, name: g.name })) });
+    const series = await hupu.seriesScores(m.id).catch(() => []);
+    known.set(m.id, { ...m, full: true, series, standouts: standouts(games, series), games: games.map((g) => ({ id: g.id, name: g.name })) });
     index.matches = [...known.values()].sort((a, b) => b.start - a.start);
     index.updated = Date.now();
     await writeFile(new URL("index.json", DATA), JSON.stringify(index));

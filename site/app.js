@@ -94,7 +94,7 @@ function annotated(c) {
 
 function textBlock(c) {
   const zh = `<p class="text">${esc(c.zh)}</p>`;
-  const done = c.en && c.verified;
+  const done = Boolean(c.en);
   const en = done ? `<p class="text">${annotated(c)}</p>` : `<p class="pending">Being translated…</p>`;
   if (view.lang === "zh") return zh;
   if (view.lang === "split") return `<div class="split"><div>${zh}</div><div>${en}</div></div>`;
@@ -119,7 +119,7 @@ function comment(c, it, isReply) {
 
 function searchHit(c) {
   const q = view.q.toLowerCase();
-  return [c, ...(c.thread ?? [])].some((x) => x.zh.toLowerCase().includes(q) || (x.verified && x.en?.toLowerCase().includes(q)));
+  return [c, ...(c.thread ?? [])].some((x) => x.zh.toLowerCase().includes(q) || x.en?.toLowerCase().includes(q));
 }
 
 function feed(game) {
