@@ -1,5 +1,5 @@
-// Pulls finished LoL matches, every rated player/coach/caster/pick per game, and their top comments.
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+// Pulls finished LoL matches, every rated entry per game, its 30 most-liked comments and their replies.
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import * as hupu from "./hupu.js";
 
@@ -7,8 +7,10 @@ const DATA = new URL("../site/data/", import.meta.url);
 const args = Object.fromEntries(process.argv.slice(2).map((a) => a.replace(/^--/, "").split("=")));
 const EVENT = args.event ?? "";
 const LIMIT = Number(args.limit ?? Infinity);
-const PAGES = Number(args.pages ?? 0);
+const TOP = Number(args.top ?? 30);
+const REPLIES = Number(args.replies ?? 10);
 const REFRESH_DAYS = Number(args.refresh ?? 3);
+const WORKERS = Number(args.workers ?? 3);
 
 const one = (v) => (Array.isArray(v) ? v[0] : v);
 
@@ -16,7 +18,7 @@ function comment(c) {
   return {
     id: String(c.commentId),
     zh: c.commentContent ?? "",
-    score: c.score ?? null,
+    score: c.score || null,
     likes: c.lightCount ?? 0,
     ip: c.ipLocation || null,
     time: c.publishTime ?? null,
@@ -47,17 +49,63 @@ async function readJson(url, fallback) {
   return existsSync(url) ? JSON.parse(await readFile(url, "utf8")) : fallback;
 }
 
-// Keeps translations already done for comments that are fetched again.
+// Every comment ranked by likes, so the top 30 are exact rather than Hupu's short "hottest" list.
+async function topComments(node) {
+  const all = await hupu.latest(node.bizType, node.bizId);
+  const seen = new Set();
+  const top = all.filter((c) => c.commentContent?.trim() && !seen.has(c.commentId) && seen.add(c.commentId))
+    .sort((a, b) => (b.lightCount ?? 0) - (a.lightCount ?? 0))
+    .slice(0, TOP)
+    .map(comment);
+  for (const c of top) {
+    if (!c.replies || !REPLIES) continue;
+    const thread = await hupu.replies(node.bizType, node.bizId, c.id, Math.min(50, c.replies));
+    c.thread = thread
+      .filter((r) => r.commentContent?.trim())
+      .sort((a, b) => (b.lightCount ?? 0) - (a.lightCount ?? 0))
+      .slice(0, REPLIES)
+      .map((r) => ({ ...comment(r), to: String(r.parentCommentId) === c.id ? null : r.parentCommentUserName ?? null }))
+      .sort((a, b) => a.time - b.time);
+  }
+  return top;
+}
+
+// Carries finished translations over to comments fetched again.
 function carry(oldItems, newItems) {
-  const old = new Map(oldItems.flatMap((it) => it.top.map((c) => [c.id, c])));
+  const keep = ["en", "notes", "verified"];
+  const old = new Map();
+  for (const it of oldItems) for (const c of it.top) for (const x of [c, ...(c.thread ?? [])]) old.set(x.id, x);
   const oldNames = new Map(oldItems.map((it) => [it.id, it.en]));
   for (const it of newItems) {
     if (oldNames.get(it.id)) it.en = oldNames.get(it.id);
     for (const c of it.top) {
-      const prev = old.get(c.id);
-      if (prev?.en) Object.assign(c, { en: prev.en, notes: prev.notes });
+      for (const x of [c, ...(c.thread ?? [])]) {
+        const prev = old.get(x.id);
+        if (prev?.en && prev.zh === x.zh) for (const k of keep) if (prev[k] !== undefined) x[k] = prev[k];
+      }
     }
   }
+}
+
+async function pool(tasks, n) {
+  const out = new Array(tasks.length);
+  let next = 0;
+  await Promise.all(Array.from({ length: n }, async () => {
+    while (next < tasks.length) {
+      const i = next++;
+      out[i] = await tasks[i]();
+    }
+  }));
+  return out;
+}
+
+// Highest- and lowest-rated players of the series, among entries with enough votes to mean something.
+function standouts(games) {
+  const players = games.flatMap((g) => g.items.filter((it) => it.type === "player" && it.raters >= 300)
+    .map((it) => ({ name: it.en ?? it.name, avg: it.avg, game: g.name, image: it.image })));
+  if (!players.length) return null;
+  players.sort((a, b) => b.avg - a.avg);
+  return { mvp: players[0], worst: players[players.length - 1] };
 }
 
 async function main() {
@@ -68,36 +116,33 @@ async function main() {
     .filter((m) => m.status === "COMPLETED" && m.key?.type === "lol_match" && m.event.includes(EVENT))
     .sort((a, b) => b.start - a.start);
   const fresh = Date.now() - REFRESH_DAYS * 864e5;
-  const todo = all.filter((m) => !known.has(m.id) || m.start > fresh).slice(0, LIMIT);
+  const todo = all.filter((m) => args.all !== undefined || !known.get(m.id)?.full || m.start > fresh).slice(0, LIMIT);
   console.log(`${all.length} finished matches, fetching ${todo.length}`);
 
+  const lock = new URL("matches/fetching.lock", DATA);
   for (const m of todo) {
+    const t0 = Date.now();
+    // Tells a translate run going at the same time to leave this match alone until it is rewritten.
+    await writeFile(lock, m.id);
     const file = new URL(`matches/${m.id}.json`, DATA);
     const prev = await readJson(file, { games: [] });
     const games = [];
     for (const g of await hupu.children(m.key.type, m.key.no)) {
-      const items = [];
-      for (const node of await hupu.children(g.bizType, g.bizId)) {
-        const it = item(node);
-        const raw = PAGES ? await hupu.latest(node.bizType, node.bizId, PAGES) : [];
-        const seen = new Set();
-        it.top = [...(await hupu.hottest(node.bizType, node.bizId)), ...raw]
-          .map(comment)
-          .filter((c) => c.zh.trim() && !seen.has(c.id) && seen.add(c.id));
-        items.push(it);
-      }
+      const nodes = await hupu.children(g.bizType, g.bizId);
+      const items = await pool(nodes.map((node) => async () => ({ ...item(node), top: await topComments(node) })), WORKERS);
       items.sort((a, b) => b.raters - a.raters);
       carry(prev.games.find((p) => p.id === String(g.bizId))?.items ?? [], items);
       games.push({ id: String(g.bizId), name: g.name, items });
     }
     await writeFile(file, JSON.stringify({ ...m, games }));
-    known.set(m.id, { ...m, games: games.map((g) => ({ id: g.id, name: g.name })) });
-    console.log(`  ${m.event} ${m.teams.map((t) => t.name).join(" vs ")}: ${games.length} games`);
+    known.set(m.id, { ...m, full: true, standouts: standouts(games), games: games.map((g) => ({ id: g.id, name: g.name })) });
+    index.matches = [...known.values()].sort((a, b) => b.start - a.start);
+    index.updated = Date.now();
+    await writeFile(new URL("index.json", DATA), JSON.stringify(index));
+    const n = games.reduce((s, g) => s + g.items.reduce((t, it) => t + it.top.length, 0), 0);
+    console.log(`  ${m.event} ${m.teams.map((t) => t.name).join(" vs ")}: ${games.length} games, ${n} top comments, ${((Date.now() - t0) / 1000).toFixed(0)}s`);
   }
-
-  index.matches = [...known.values()].sort((a, b) => b.start - a.start);
-  index.updated = Date.now();
-  await writeFile(new URL("index.json", DATA), JSON.stringify(index));
+  await rm(lock, { force: true });
 }
 
 main().catch((e) => {

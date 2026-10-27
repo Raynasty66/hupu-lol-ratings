@@ -59,7 +59,14 @@ export async function hottest(type, no) {
   return Array.isArray(data) ? data : data.comments ?? [];
 }
 
-export async function latest(type, no, pages) {
+export async function replies(type, no, parentId, max) {
+  const data = await get(`${SCORE}/bpl/comment/list/primarySingleRow/getMore`, {
+    publishTime: 0, outBizType: type, outBizNo: no, parentCommentId: parentId, pageSize: max, clientCode: "", cid: "",
+  });
+  return data.comments ?? [];
+}
+
+export async function latest(type, no, pages = Infinity) {
   const out = [];
   let cursor = Date.now();
   for (let i = 0; i < pages; i++) {

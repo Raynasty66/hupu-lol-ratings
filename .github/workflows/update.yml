@@ -1,0 +1,46 @@
+name: Daily update
+
+# Runs after Gemini's free quota resets (midnight Pacific).
+on:
+  schedule:
+    - cron: "30 8 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: update
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    env:
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: Fetch new games
+        run: node pipeline/fetch.js --event=全球总决赛
+      - name: Translate and check
+        # Stops by itself when the free daily quotas run out.
+        run: timeout 300m node pipeline/translate.js || true
+      - name: Commit data
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add site/data pipeline/nicknames.json
+          git diff --cached --quiet && exit 0
+          git commit -m "Daily data update"
+          git pull --rebase -X ours
+          git push
+      - name: Deploy
+        if: env.CLOUDFLARE_API_TOKEN != ''
+        run: npx --yes wrangler@4.149.0 deploy

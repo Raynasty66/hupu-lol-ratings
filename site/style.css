@@ -145,10 +145,36 @@ img { display: block; }
 .note:hover .tip, .note:focus .tip { display: block; }
 .tip em { font-style: normal; opacity: 0.75; }
 
+.picks { grid-column: 1 / -1; display: flex; justify-content: space-between; gap: 12px; border-top: 1px dashed var(--line); padding-top: 8px; }
+.pick { display: flex; align-items: center; gap: 8px; font-weight: 600; min-width: 0; }
+.pick:last-child { flex-direction: row-reverse; text-align: right; }
+.pick small { display: block; color: var(--muted); font-weight: 400; font-size: 11px; }
+.pick .mini { width: 30px; height: 30px; border-radius: 7px; object-fit: cover; background: var(--chip); }
+
+.controls { position: sticky; top: 0; z-index: 4; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; background: var(--bg); padding: 8px 0 10px; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; background: var(--chip); }
+.seg button { font: inherit; font-size: 13px; border: 0; background: transparent; color: var(--ink); padding: 5px 10px; cursor: pointer; }
+.seg button[aria-pressed="true"] { background: var(--accent); color: #fff; }
+.controls input { flex: 1 1 180px; min-width: 0; font: inherit; font-size: 14px; padding: 6px 12px; border-radius: 999px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); }
+
+.chart { display: grid; gap: 4px; padding: 10px 0 6px; max-width: 460px; }
+.chart .row { display: grid; grid-template-columns: 28px 1fr auto; gap: 8px; align-items: center; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.chart .bar { height: 8px; border-radius: 4px; background: var(--chip); overflow: hidden; }
+.chart .bar i { display: block; height: 100%; }
+
+.stars.s10, .stars.s8 { color: var(--good); }
+.stars.s6 { color: var(--mid); }
+.stars.s4, .stars.s2 { color: var(--bad); }
+
+.thread { margin: 8px 0 0 14px; padding-left: 12px; border-left: 2px solid var(--line); }
+.reply { padding: 6px 0; }
+.reply p { font-size: 14px; }
+.to { color: var(--muted); font-size: 12px; }
+
 .hupu { color: var(--accent); font-size: 13px; text-decoration: none; white-space: nowrap; }
 .hupu:hover { text-decoration: underline; }
 .tabs .hupu { align-self: center; margin-left: 6px; }
-.more { margin: 10px 0 2px; }
+.more { margin: 10px 0 2px; color: var(--muted); font-size: 13px; }
 
 .empty { color: var(--muted); padding: 40px 0; text-align: center; }
 

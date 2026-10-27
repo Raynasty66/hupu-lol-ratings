@@ -53,36 +53,79 @@ function annotated(c) {
   });
 }
 
+// Match-page view settings, shared by every player card.
+const view = { sort: "top", stars: 0, lang: "en", q: "", open: new Set() };
+const COLORS = { 2: "var(--bad)", 4: "#e07a3a", 6: "var(--mid)", 8: "#7bb35a", 10: "var(--good)" };
+const starText = (score) => (score ? "★".repeat(score / 2) + "☆".repeat(5 - score / 2) : "");
+
+function body(c) {
+  const english = c.en && c.verified;
+  const en = english ? `<p class="en">${annotated(c)}</p>` : "";
+  const zh = `<p class="zh">${esc(c.zh)}</p>`;
+  if (!english) return `${zh}<p class="pending">English translation is still being checked.</p>`;
+  if (view.lang === "zh") return zh;
+  if (view.lang === "both") return en + zh;
+  return en;
+}
+
 function renderComment(c) {
-  const stars = c.score ? "★".repeat(c.score / 2) + "☆".repeat(5 - c.score / 2) : "";
-  const body = c.en
-    ? `<p class="en">${annotated(c)}</p><p class="zh" hidden>${esc(c.zh)}</p>`
-    : `<p class="zh">${esc(c.zh)}</p><p class="pending">Translation coming soon.</p>`;
-  return `<div class="comment">${body}<div class="info">
-    <span class="stars" title="${c.score / 2} of 5">${stars}</span>
+  const thread = c.thread ?? [];
+  return `<div class="comment">${body(c)}<div class="info">
+    ${c.score ? `<span class="stars s${c.score}" title="${c.score / 2} of 5 stars">${starText(c.score)}</span>` : ""}
     <span>▲ ${c.likes.toLocaleString()}</span>
     ${c.ip ? `<span>${PROVINCES[c.ip] ?? "Outside China"}</span>` : ""}
-    ${c.replies ? `<span>${c.replies} ${c.replies === 1 ? "reply" : "replies"}</span>` : ""}
-    ${c.en ? `<button class="link" data-flip>Show original</button>` : ""}
-  </div></div>`;
+    ${thread.length ? `<button class="link" data-thread aria-expanded="false">${thread.length} ${thread.length === 1 ? "reply" : "replies"}</button>` : ""}
+  </div>
+  ${thread.length ? `<div class="thread" hidden>${thread.map((r) => `<div class="reply">${r.to ? `<span class="to">→ ${esc(r.to)}</span>` : ""}${body(r)}
+    <div class="info"><span>▲ ${r.likes.toLocaleString()}</span>${r.ip ? `<span>${PROVINCES[r.ip] ?? "Outside China"}</span>` : ""}</div></div>`).join("")}</div>` : ""}
+  </div>`;
+}
+
+function matches(c) {
+  if (view.stars && c.score !== view.stars) return false;
+  if (!view.q) return true;
+  const q = view.q.toLowerCase();
+  return [c, ...(c.thread ?? [])].some((x) => x.zh.toLowerCase().includes(q) || (x.verified && x.en?.toLowerCase().includes(q)));
+}
+
+function breakdown(it) {
+  const total = Object.values(it.dist).reduce((a, b) => a + b, 0) || 1;
+  return `<div class="chart" role="img" aria-label="Rating breakdown">${[10, 8, 6, 4, 2].map((k) => {
+    const n = it.dist[k] ?? 0;
+    return `<div class="row"><span>${k / 2}★</span><div class="bar"><i style="width:${(n / total) * 100}%;background:${COLORS[k]}"></i></div><span>${n.toLocaleString()} · ${Math.round((n / total) * 100)}%</span></div>`;
+  }).join("")}</div>`;
 }
 
 function renderItem(it, teams) {
   const total = Object.values(it.dist).reduce((a, b) => a + b, 0) || 1;
-  const colors = { 2: "var(--bad)", 4: "#e07a3a", 6: "var(--mid)", 8: "#7bb35a", 10: "var(--good)" };
-  const dist = [2, 4, 6, 8, 10].map((k) => `<i style="width:${((it.dist[k] ?? 0) / total) * 100}%;background:${colors[k]}"></i>`).join("");
+  const dist = [2, 4, 6, 8, 10].map((k) => `<i style="width:${((it.dist[k] ?? 0) / total) * 100}%;background:${COLORS[k]}"></i>`).join("");
   const team = teams.find((t) => t.id === it.team)?.name;
   const kd = it.kills != null ? `${it.kills}/${it.deaths} K/D` : "";
   const sub = [team, kd, it.type === "bpHero" ? "Bans" : ""].filter(Boolean).join(" · ");
-  return `<article class="item">
-    <button aria-expanded="false">
+  const list = it.top.filter(matches).sort(view.sort === "new" ? (a, b) => b.time - a.time : (a, b) => b.likes - a.likes);
+  const open = view.open.has(it.id) || (view.q && list.length > 0);
+  if ((view.q || view.stars) && !list.length) return "";
+  return `<article class="item" data-id="${it.id}">
+    <button aria-expanded="${open}">
       <div class="avatar">${img(it.image, "face", it.name)}${img(it.champion, "champ", "champion")}</div>
       <div class="who"><b>${esc(it.en ?? it.name)}</b><small>${esc(sub)}</small><div class="dist" title="1★ to 5★ share">${dist}</div></div>
       <div class="rating"><b class="${tone(it.avg)}">${it.avg.toFixed(1)}</b><small>${it.raters.toLocaleString()} ratings</small></div>
     </button>
-    <div class="comments" hidden>${it.top.length ? it.top.map(renderComment).join("") : `<p class="empty">No comments yet.</p>`}
-      <p class="more">${hupuLink(`/score-item/lol_item/${it.id}`, `Rate it or read all ${it.comments.toLocaleString()} comments on Hupu`)}</p></div>
+    <div class="comments" ${open ? "" : "hidden"}>${breakdown(it)}
+      ${list.length ? list.map(renderComment).join("") : `<p class="empty">No comments match.</p>`}
+      <p class="more">Showing the ${it.top.length} most-liked of ${it.comments.toLocaleString()} comments. ${hupuLink(`/score-item/lol_item/${it.id}`, "Rate it or read the rest on Hupu")}</p></div>
   </article>`;
+}
+
+function controls() {
+  const seg = (key, opts) => `<div class="seg" role="group">${opts.map(([v, label]) =>
+    `<button data-set="${key}" data-value="${v}" aria-pressed="${String(view[key]) === String(v)}">${label}</button>`).join("")}</div>`;
+  return `<div class="controls">
+    ${seg("sort", [["top", "Top"], ["new", "Newest"]])}
+    ${seg("stars", [[0, "All"], [10, "5★"], [8, "4★"], [6, "3★"], [4, "2★"], [2, "1★"]])}
+    ${seg("lang", [["en", "English"], ["zh", "中文"], ["both", "Both"]])}
+    <input type="search" placeholder="Search comments" value="${esc(view.q)}" aria-label="Search comments">
+  </div>`;
 }
 
 async function showList(filter) {
@@ -99,9 +142,12 @@ async function showList(filter) {
     <section class="matches">${list.map((m) => {
       const [a, b] = m.teams;
       const side = (t, cls) => `<div class="team ${cls} ${m.winner && t.id !== m.winner ? "lost" : ""}">${cls === "away" ? esc(t.name) + img(t.logo, "") : img(t.logo, "") + esc(t.name)}</div>`;
+      const s = m.standouts;
+      const pick = (p, label, cls) => `<span class="pick">${img(p.image, "mini", p.name)}<span><small>${label} · ${esc(gameName(p.game))}</small>${esc(p.name)} <b class="${cls}">${p.avg.toFixed(1)}</b></span></span>`;
       return `<a class="match" href="#/m/${m.id}">
         <div class="meta"><span>${esc(eventName(m.event))}</span><span>${date(m.start)}</span></div>
         ${side(a, "home")}<div class="score">${a.score} – ${b.score}</div>${side(b, "away")}
+        ${s ? `<div class="picks">${pick(s.mvp, "Fans' MVP", tone(s.mvp.avg))}${pick(s.worst, "Scapegoat", tone(s.worst.avg))}</div>` : ""}
       </a>`;
     }).join("") || `<p class="empty">No matches yet.</p>`}</section>`;
 }
@@ -119,24 +165,54 @@ async function showMatch(id, gameId) {
     <nav class="tabs">${[...m.games].sort((x, y) => x.name.localeCompare(y.name)).map((g) =>
       `<a class="chip" href="#/m/${m.id}/${g.id}" aria-pressed="${g === game}">${esc(gameName(g.name))}</a>`).join("")}
       ${game ? hupuLink(`/score-list/lol_bo/${game.id}`, `${gameName(game.name)} on Hupu`) : ""}</nav>
-    <section class="items">${game ? game.items.map((it) => renderItem(it, m.teams)).join("") : `<p class="empty">No games rated yet.</p>`}</section>`;
+    ${controls()}
+    <section class="items"></section>`;
+  current = { game, teams: m.teams };
+  renderItems();
+}
+
+let current = null;
+
+function renderItems() {
+  const box = app.querySelector(".items");
+  if (!box || !current) return;
+  const html = current.game ? current.game.items.map((it) => renderItem(it, current.teams)).join("") : "";
+  box.innerHTML = html || `<p class="empty">${current.game ? "No comments match." : "No games rated yet."}</p>`;
 }
 
 app.addEventListener("click", (e) => {
   const head = e.target.closest(".item > button");
   if (head) {
+    const id = head.parentElement.dataset.id;
     const open = head.getAttribute("aria-expanded") === "true";
     head.setAttribute("aria-expanded", String(!open));
     head.nextElementSibling.hidden = open;
+    if (open) view.open.delete(id);
+    else view.open.add(id);
   }
-  const flip = e.target.closest("[data-flip]");
-  if (flip) {
-    const c = flip.closest(".comment");
-    const zh = c.querySelector(".zh");
-    zh.hidden = !zh.hidden;
-    c.querySelector(".en").hidden = !zh.hidden;
-    flip.textContent = zh.hidden ? "Show original" : "Show English";
+  const set = e.target.closest("[data-set]");
+  if (set) {
+    const key = set.dataset.set;
+    view[key] = key === "stars" ? Number(set.dataset.value) : set.dataset.value;
+    set.parentElement.querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(b === set)));
+    renderItems();
   }
+  const thread = e.target.closest("[data-thread]");
+  if (thread) {
+    const box = thread.closest(".comment").querySelector(".thread");
+    box.hidden = !box.hidden;
+    thread.setAttribute("aria-expanded", String(!box.hidden));
+  }
+});
+
+let searchTimer;
+app.addEventListener("input", (e) => {
+  if (e.target.type !== "search") return;
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => {
+    view.q = e.target.value.trim();
+    renderItems();
+  }, 200);
 });
 
 async function route() {

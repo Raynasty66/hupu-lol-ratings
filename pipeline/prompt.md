@@ -5,7 +5,9 @@ Context: fans rated "{{TARGET}}" in {{MATCH}}, {{GAME}}. Each comment came with 
 RULES:
 - Translate `zh` naturally and colloquially, keeping the jokes, sarcasm and trash talk; do not soften insults.
 - Use standard English LoL terms: 打野 jungler, 上单 top laner, 中单 mid laner, 下路 bot lane, ADC, 辅助 support, 团战 teamfight, 龙魂 dragon soul, 大龙 Baron, 先锋 Herald, 经济 gold, 补刀 CS, 越塔 tower dive, 开团 engage, 白给 feed, 送 int.
-- Keep player, team and champion names in their usual English form (e.g. 厂长 is Clearlove, 蔚 is Vi). {{GLOSSARY}}
+- Keep player, team and champion names in their usual English form, and turn fan nicknames into the player's ID (e.g. 圣枪哥 is Flandre, 厂长 is Clearlove, 蔚 is Vi). {{GLOSSARY}}
+- Items with `replyTo` are replies; `replyTo` is the Chinese comment they answer, for context only. Translate only `zh`.
+- If an item has `fix`, an earlier translation was rejected for that reason; avoid that mistake.
 - If a comment contains a bracketed emote code, copy it unchanged into the same spot; never add emote codes that are not in that comment.
 - Never use pinyin in `en`.
 - If a phrase is a meme, slang, nickname or wordplay an English fan would not get, wrap its English in [~N:phrase] with N counting from 0 per comment, and add a note for it. At most 3 notes per comment; ordinary words get none.
