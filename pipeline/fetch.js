@@ -73,7 +73,7 @@ async function topComments(node) {
 
 // Carries finished translations over to comments fetched again.
 function carry(oldItems, newItems) {
-  const keep = ["en", "notes", "verified"];
+  const keep = ["en", "notes", "verified", "reviewed", "edited", "by"];
   const old = new Map();
   for (const it of oldItems) for (const c of it.top) for (const x of [c, ...(c.thread ?? [])]) old.set(x.id, x);
   const oldNames = new Map(oldItems.map((it) => [it.id, it.en]));
