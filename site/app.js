@@ -63,7 +63,7 @@ async function load(path) {
 let spoilers = false;
 
 // Match-page view settings.
-const view = { sort: "hot", lang: "en", q: "", searching: false, player: null, shown: PAGE };
+const view = { sort: "hot", lang: "en", q: "", searching: false, player: null, playerName: null, shown: PAGE };
 
 // Stages the reader has opened or closed in the sidebar; the current match's stage always starts open.
 const openStages = new Set();
@@ -231,12 +231,21 @@ async function showMatch(id, gameId) {
   // Series with more than one game open on the full-match tab.
   const tabs = games.length > 1 ? [fullMatch(m, games, entry), ...games] : games;
   const game = tabs.find((g) => g.id === gameId) ?? tabs[0];
-  if (state.game !== game) Object.assign(view, { player: null, q: "", searching: false, shown: PAGE });
+  // Switching game or match keeps sort, language and search, and keeps the selected person by name when they are in it.
+  if (state.game !== game) {
+    view.player = game?.items.find((it) => it.name === view.playerName)?.id ?? null;
+    view.shown = PAGE;
+  }
   state.game = game;
   sidebar(index, { match: m.id, game: game?.id, tabs });
   document.title = `${vs(m)} · Hupu LoL Ratings`;
   const [a, b] = m.teams;
-  const items = game ? game.items : [];
+  // Lineup order in every tab: each team Top to Support, then coaches, casters and the rest, then bans.
+  const ROLES = ["TOP", "JUN", "MID", "BOT", "SUP"];
+  const roleOf = new Map((entry?.series ?? []).map((p) => [p.name, p.role]));
+  const teamIndex = (it) => { const i = m.teams.findIndex((t) => t.id === it.team || t.id === (entry?.series ?? []).find((p) => p.name === it.name)?.team); return i < 0 ? 2 : i; };
+  const rank = (it) => it.type === "bpHero" ? [4, teamIndex(it), 0] : it.type === "player" ? [0, teamIndex(it), ROLES.indexOf(roleOf.get(it.name)) + 1 || 9] : [3, 0, -it.raters];
+  const items = game ? [...game.items].sort((x, y) => { const a = rank(x), b = rank(y); return a[0] - b[0] || a[1] - b[1] || a[2] - b[2]; }) : [];
   app.innerHTML = `
     ${header(`${img(a.logo, "", a.name)}${esc(a.name)} ${a.score} – ${b.score} ${esc(b.name)}${img(b.logo, "", b.name)}`,
       `<p class="sub">${esc(eventName(m.event))}${game ? ` · ${gameName(game.name)}` : ""}${m.raters ? ` · ${raterCount(m.raters)} raters` : ""}</p>
@@ -298,6 +307,7 @@ app.addEventListener("click", (e) => {
   const player = t.closest("[data-player]");
   if (player) {
     view.player = player.dataset.player || null;
+    view.playerName = state.game.items.find((it) => it.id === view.player)?.name ?? null;
     view.shown = PAGE;
     app.querySelectorAll("[data-player]").forEach((c) => c.setAttribute("aria-pressed", String(c === player)));
     renderFeed();
