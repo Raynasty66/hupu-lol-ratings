@@ -6,7 +6,7 @@ import { nicknameGlossary } from "./nicknames.js";
 import { backend, parseJson, QuotaError } from "./llm.js";
 
 const DATA = new URL("../site/data/matches/", import.meta.url);
-const args = Object.fromEntries(process.argv.slice(2).map((a) => a.replace(/^--/, "").split("=")));
+const args = Object.fromEntries(process.argv.slice(2).map((a) => { const [k, ...v] = a.replace(/^--/, "").split("="); return [k, v.length ? v.join("=") : true]; }));
 const translator = backend(args.translator ?? "gemini");
 const checker = args.checker === "none" ? null : backend(args.checker ?? "groq");
 const BATCH = Number(args.batch ?? 20);
@@ -132,15 +132,21 @@ async function main() {
             const batch = units.slice(i, i + BATCH);
             const glossary = await terms(batch.map((u) => u.zh));
             const t0 = Date.now();
-            await translate(batch, ctx, glossary);
-            if (checker) {
-              await check(batch, ctx, glossary);
-              const retry = batch.filter((u) => u.problem);
-              if (retry.length) {
-                await translate(retry, ctx, glossary);
-                retry.forEach((u) => delete u.problem);
-                await check(retry, ctx, glossary);
+            try {
+              await translate(batch, ctx, glossary);
+              if (checker) {
+                await check(batch, ctx, glossary);
+                const retry = batch.filter((u) => u.problem);
+                if (retry.length) {
+                  await translate(retry, ctx, glossary);
+                  retry.forEach((u) => delete u.problem);
+                  await check(retry, ctx, glossary);
+                }
               }
+            } catch (err) {
+              // One bad response skips this batch; it stays unverified and is retried next run.
+              if (err instanceof QuotaError) throw err;
+              console.warn(`    batch skipped: ${err.message.slice(0, 160)}`);
             }
             const ok = batch.filter((u) => u.ref.verified).length;
             verified += ok;

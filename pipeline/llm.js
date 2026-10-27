@@ -72,13 +72,14 @@ export function backend(name) {
       }
       last = Date.now();
       window.push({ t: last, tokens });
+      let strict = true;
       for (let attempt = 1; ; attempt++) {
         const res = await fetch(b.url, {
           method: "POST",
           headers: { "Content-Type": "application/json", ...(b.key && { Authorization: `Bearer ${process.env[b.key]}` }) },
           body: JSON.stringify({
             model: models[0], temperature: 0.2,
-            response_format: { type: "json_object" },
+            ...(strict && { response_format: { type: "json_object" } }),
             messages: [{ role: "user", content: prompt }],
           }),
         });
@@ -87,6 +88,11 @@ export function backend(name) {
           return body.choices?.[0]?.message?.content ?? "";
         }
         const text = await res.text();
+        // Groq rejects output that fails its own JSON check; ask again without JSON mode and parse it ourselves.
+        if (res.status === 400 && /json_validate_failed/.test(text) && strict) {
+          strict = false;
+          continue;
+        }
         if (res.status === 429 && /day|daily|RPD|TPD|quota/i.test(text) && !/minute/i.test(text)) {
           throw new QuotaError(`${name} daily quota used up`);
         }

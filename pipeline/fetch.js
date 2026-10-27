@@ -4,7 +4,7 @@ import { existsSync } from "node:fs";
 import * as hupu from "./hupu.js";
 
 const DATA = new URL("../site/data/", import.meta.url);
-const args = Object.fromEntries(process.argv.slice(2).map((a) => a.replace(/^--/, "").split("=")));
+const args = Object.fromEntries(process.argv.slice(2).map((a) => { const [k, ...v] = a.replace(/^--/, "").split("="); return [k, v.length ? v.join("=") : true]; }));
 const EVENT = args.event ?? "";
 const LIMIT = Number(args.limit ?? Infinity);
 const TOP = Number(args.top ?? 30);
@@ -17,6 +17,7 @@ const one = (v) => (Array.isArray(v) ? v[0] : v);
 function comment(c) {
   return {
     id: String(c.commentId),
+    user: c.commentUserName ?? null,
     zh: c.commentContent ?? "",
     score: c.score || null,
     likes: c.lightCount ?? 0,
@@ -102,7 +103,7 @@ async function pool(tasks, n) {
 // Highest- and lowest-rated players of the series, among entries with enough votes to mean something.
 function standouts(games) {
   const players = games.flatMap((g) => g.items.filter((it) => it.type === "player" && it.raters >= 300)
-    .map((it) => ({ name: it.en ?? it.name, avg: it.avg, game: g.name, image: it.image })));
+    .map((it) => ({ name: it.en ?? it.name, avg: it.avg, game: g.name, image: it.image, team: it.team })));
   if (!players.length) return null;
   players.sort((a, b) => b.avg - a.avg);
   return { mvp: players[0], worst: players[players.length - 1] };
@@ -112,6 +113,16 @@ async function main() {
   await mkdir(new URL("matches/", DATA), { recursive: true });
   const index = await readJson(new URL("index.json", DATA), { matches: [] });
   const known = new Map(index.matches.map((m) => [m.id, m]));
+  if (args.reindex !== undefined) {
+    // Recomputes each match's MVP/LVP from the saved files, without touching Hupu.
+    for (const m of index.matches) {
+      const saved = await readJson(new URL(`matches/${m.id}.json`, DATA), null);
+      if (saved) m.standouts = standouts(saved.games);
+    }
+    await writeFile(new URL("index.json", DATA), JSON.stringify(index));
+    console.log(`reindexed ${index.matches.length} matches`);
+    return;
+  }
   const all = (await hupu.schedule())
     .filter((m) => m.status === "COMPLETED" && m.key?.type === "lol_match" && m.event.includes(EVENT))
     .sort((a, b) => b.start - a.start);

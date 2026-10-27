@@ -32,14 +32,17 @@ jobs:
       - name: Translate and check
         # Stops by itself when the free daily quotas run out.
         run: timeout 300m node pipeline/translate.js || true
+      - name: Refresh MVP and LVP
+        run: node pipeline/fetch.js --reindex
       - name: Commit data
+        # On a clash with a push made meanwhile, this run's fresh data wins.
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add site/data pipeline/nicknames.json
           git diff --cached --quiet && exit 0
           git commit -m "Daily data update"
-          git pull --rebase -X ours
+          git pull --rebase -X theirs
           git push
       - name: Deploy
         if: env.CLOUDFLARE_API_TOKEN != ''
