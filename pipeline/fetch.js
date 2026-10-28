@@ -2,6 +2,7 @@
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import * as hupu from "./hupu.js";
+import { addPicks } from "./lolesports.js";
 
 const DATA = new URL("../site/data/", import.meta.url);
 const args = Object.fromEntries(process.argv.slice(2).map((a) => { const [k, ...v] = a.replace(/^--/, "").split("="); return [k, v.length ? v.join("=") : true]; }));
@@ -153,8 +154,10 @@ async function main() {
       carry(prev.games.find((p) => p.id === String(g.bizId))?.items ?? [], items);
       games.push({ id: String(g.bizId), name: g.name, items });
     }
-    await writeFile(file, JSON.stringify({ ...m, games }));
     const series = await hupu.seriesScores(m.id).catch(() => []);
+    // Champions each player used, from Riot; a failure there never blocks the ratings.
+    await addPicks({ ...m, games }, series).catch((e) => console.warn(`  no champion data: ${e.message}`));
+    await writeFile(file, JSON.stringify({ ...m, games }));
     known.set(m.id, { ...m, full: true, series, standouts: standouts(games, series), games: games.map((g) => ({ id: g.id, name: g.name })) });
     index.matches = [...known.values()].sort((a, b) => b.start - a.start);
     index.updated = Date.now();

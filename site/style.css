@@ -101,7 +101,10 @@ main { min-width: 0; padding: 28px 56px 60px; max-width: 1100px; }
 .updated { color: var(--muted-fg); font-size: 12.5px; margin: 2px 0 0; }
 .label { margin: 20px 0 8px; font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted-fg); }
 
-.chips { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; scrollbar-width: thin; }
+.rated { display: grid; gap: 10px; justify-items: start; }
+.chip-row { display: grid; gap: 4px; width: 100%; }
+.row-label { font-size: 11px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted-fg); }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
 .chip {
   flex: none; display: flex; align-items: center; gap: 8px;
   background: var(--card); border: 1px solid var(--border); border-radius: 10px;
@@ -236,3 +239,14 @@ main { min-width: 0; padding: 28px 56px 60px; max-width: 1100px; }
 .setting > span { font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted-fg); }
 .theme button { font-size: 12.5px; }
 .theme.two { grid-template-columns: repeat(2, 1fr); }
+.chip { max-width: 100%; }
+.chip > span:last-child { min-width: 0; }
+.chip b { overflow-wrap: anywhere; }
+.faces { position: relative; flex: none; display: block; }
+.faces .champ { position: absolute; right: -5px; bottom: -5px; width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--card); background: var(--muted); }
+.who-line { display: inline-flex; align-items: center; gap: 8px; }
+.who-line .champ { width: 22px; height: 22px; border-radius: 50%; }
+.more-ratings { justify-self: start; }
+.faces .champ:nth-of-type(3) { right: 9px; }
+.faces .champ:nth-of-type(4) { right: 23px; }
+.who-line .champ + .champ { margin-left: -4px; }

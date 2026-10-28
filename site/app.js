@@ -63,7 +63,7 @@ async function load(path) {
 let spoilers = false;
 
 // Match-page view settings.
-const view = { sort: "hot", lang: "en", q: "", searching: false, player: null, playerName: null, shown: PAGE };
+const view = { sort: "hot", lang: "en", q: "", searching: false, player: null, playerName: null, showExtra: false, shown: PAGE };
 
 // Stages the reader has opened or closed in the sidebar; the current match's stage always starts open.
 const openStages = new Set();
@@ -152,10 +152,10 @@ function feed(game) {
 
 function breakdown(it) {
   const total = Object.values(it.dist).reduce((a, b) => a + b, 0) || 1;
-  const kd = it.kills != null ? ` · ${it.kills}/${it.deaths} K/D` : "";
+  const kd = (championNames(it) ? ` · ${championNames(it)}` : "") + (kda(it) ? ` · ${kda(it)} K/D/A` : it.kills != null ? ` · ${it.kills}/${it.deaths} K/D` : "");
   return `<div class="player">
     <div class="big ${tone(it.avg)}">${it.avg.toFixed(1)}</div>
-    <div><b>${esc(it.en ?? it.name)}</b><div class="meta">${it.raters.toLocaleString()} ratings · ${it.comments.toLocaleString()} comments${kd} · <a class="hupu" href="${HUPU}/score-item/lol_item/${it.link ?? it.id}" target="_blank" rel="noopener">Rate on Hupu ↗</a></div></div>
+    <div><b class="who-line">${esc(it.en ?? it.name)}${championIcon(it)}</b><div class="meta">${it.raters.toLocaleString()} ratings · ${it.comments.toLocaleString()} comments${kd} · <a class="hupu" href="${HUPU}/score-item/lol_item/${it.link ?? it.id}" target="_blank" rel="noopener">Rate on Hupu ↗</a></div></div>
     <div class="chart">${[10, 8, 6, 4, 2].map((k) => {
       const n = it.dist[k] ?? 0;
       return `<div class="row"><span>${k / 2}★</span><div class="bar"><i style="width:${(n / total) * 100}%;background:${COLORS[k]}"></i></div><span>${n.toLocaleString()} · ${Math.round((n / total) * 100)}%</span></div>`;
@@ -200,6 +200,10 @@ function fullMatch(m, games, entry) {
       let x = merged.get(it.name);
       if (!x) merged.set(it.name, x = { ...it, id: `all-${it.id}`, link: it.id, top: [], dist: {}, raters: 0, comments: 0, weighted: 0, kills: null });
       x.top.push(...it.top.map((c) => ({ ...c, game: gameName(g.name), item: it.id })));
+      if (it.pick && !(x.picks ??= []).some((c) => c.name === it.pick.name)) x.picks.push(it.pick);
+      // K/D/A for the series is the sum over its games.
+      const k = kda(it).split("/").map(Number);
+      if (k.length === 3) x.kdaSum = (x.kdaSum ?? [0, 0, 0]).map((v, i) => v + k[i]);
       for (const [k, n] of Object.entries(it.dist)) x.dist[k] = (x.dist[k] ?? 0) + n;
       x.raters += it.raters;
       x.comments += it.comments;
@@ -208,11 +212,41 @@ function fullMatch(m, games, entry) {
   }
   const items = [...merged.values()].map((x) => {
     const s = series.get(x.name);
-    return { ...x, avg: s ? s.avg : x.weighted / (x.raters || 1), raters: s ? s.raters : x.raters };
+    return { ...x, avg: s ? s.avg : x.weighted / (x.raters || 1), raters: s ? s.raters : x.raters,
+      note: x.kdaSum ? `K/D/A:${x.kdaSum.join("/")}` : null };
   }).sort((a, b) => b.raters - a.raters);
   const full = { id: "all", name: "Full match", full: true, items };
   fullCache.set(m.id, full);
   return full;
+}
+
+// Champions a player used (from Riot; one per game, several in the full-match view) and their K/D/A from Hupu's note.
+const picksOf = (it) => it.picks ?? (it.pick ? [it.pick] : []);
+const championIcon = (it) => picksOf(it).slice(0, 3).map((c) => img(c.icon, "champ", c.name)).join("");
+const championNames = (it) => picksOf(it).map((c) => c.name).join(", ");
+const kda = (it) => it.note?.match(/K\/D\/A[:：]\s*([\d/]+)/)?.[1] ?? "";
+
+// Rated entries as wrapping rows instead of one long scroll: one row per team, then casters and co-streams, then bans.
+function chipRows(items, m, teamIndex) {
+  const chip = (it, quoted) => `<button class="chip" data-player="${it.id}" aria-pressed="${view.player === it.id}">
+    <span class="faces">${img(it.image, "face", it.name)}${championIcon(it)}</span>
+    <span><b>${quoted ? `“${esc(it.en ?? it.name)}”` : esc(it.en ?? it.name)}</b> <span class="score ${tone(it.avg)}">${it.avg.toFixed(1)}</span><small>${[championNames(it), kda(it), `${it.raters.toLocaleString()} ratings`].filter(Boolean).join(" · ")}</small></span></button>`;
+  // Players and coaches always show; Hupu's extra entries (casters, fun ratings, bans) sit behind a toggle.
+  const people = (it) => (it.type === "player" || it.type === "coach") && teamIndex(it) < 2;
+  const caster = (it) => /^(解说|二路|场内主持|主持)/.test(it.name);
+  const rows = (list) => list.filter(([, l]) => l.length)
+    .map(([label, l]) => `<div class="chip-row"><span class="row-label">${esc(label)}</span><div class="chips">${l.map((it) => chip(it, label === "Fun ratings")).join("")}</div></div>`).join("");
+  const main = m.teams.map((t, i) => [t.name, items.filter((it) => people(it) && teamIndex(it) === i)]);
+  const extra = [
+    ["Casters & co-streams", items.filter((it) => !people(it) && it.type !== "bpHero" && caster(it))],
+    ["Fun ratings", items.filter((it) => !people(it) && it.type !== "bpHero" && !caster(it))],
+    ["Bans", items.filter((it) => it.type === "bpHero")],
+  ];
+  const extraCount = extra.reduce((s, [, l]) => s + l.length, 0);
+  const open = view.showExtra || extra.some(([, l]) => l.some((it) => it.id === view.player));
+  return rows(main) + (extraCount ? `
+    <button class="btn more-ratings" data-extra aria-expanded="${open}">${open ? "Hide" : "Show"} ${extraCount} more ratings</button>
+    ${open ? rows(extra) : ""}` : "");
 }
 
 // MVP and LVP of the match, each under its own team's side; shown only inside the match to avoid spoilers.
@@ -252,10 +286,9 @@ async function showMatch(id, gameId) {
        <p class="updated">Last updated: ${date(index.updated)}</p>`)}
     ${standoutsRow(m, entry)}
     ${game ? `<div class="label">${tabs.length > 1 ? `${gameName(game.name)} · ` : ""}${items.length} rated</div>
-    <div class="chips">
+    <div class="rated">
       <button class="chip all" data-player="" aria-pressed="${!view.player}">All</button>
-      ${items.map((it) => `<button class="chip" data-player="${it.id}" aria-pressed="${view.player === it.id}">${img(it.image, "face", it.name)}
-        <span><b>${esc(it.en ?? it.name)}</b> <span class="score ${tone(it.avg)}">${it.avg.toFixed(1)}</span><small>${it.raters.toLocaleString()} ratings</small></span></button>`).join("")}
+      ${chipRows(items, m, teamIndex)}
     </div>` : ""}
     <div class="links">
       ${tabs.map((g) => `<a class="btn" href="#/m/${m.id}/${g.id}" aria-pressed="${g === game}">${gameName(g.name)}</a>`).join("")}
@@ -322,6 +355,11 @@ app.addEventListener("click", (e) => {
     renderFeed();
   }
   if (t.closest("[data-more]")) { view.shown += PAGE; renderFeed(); }
+  if (t.closest("[data-extra]")) {
+    view.showExtra = !view.showExtra;
+    route(false);
+    return;
+  }
   const thread = t.closest("[data-thread]");
   if (thread) {
     const box = thread.nextElementSibling;
