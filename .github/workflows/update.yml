@@ -1,6 +1,6 @@
 name: Daily update
 
-# Runs after Gemini's free quota resets (midnight Pacific).
+# Every 8 hours, so finished games show up the same day.
 on:
   schedule:
     - cron: "30 */8 * * *"
