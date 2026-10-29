@@ -5,6 +5,11 @@ on:
   schedule:
     - cron: "30 */8 * * *"
   workflow_dispatch:
+    inputs:
+      all:
+        description: Refetch every match, not just new ones
+        type: boolean
+        default: false
 
 concurrency:
   group: update
@@ -16,7 +21,7 @@ permissions:
 jobs:
   update:
     runs-on: ubuntu-latest
-    timeout-minutes: 350
+    timeout-minutes: 360
     env:
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
       GEMINI_API_KEY_2: ${{ secrets.GEMINI_API_KEY_2 }}
@@ -29,7 +34,12 @@ jobs:
         with:
           node-version: 22
       - name: Fetch new games
+        if: ${{ !inputs.all }}
         run: node pipeline/fetch.js --event=全球总决赛 --refresh=1
+      - name: Refetch every match
+        # Matches are saved one at a time, so a cut-off run keeps what it finished.
+        if: ${{ inputs.all }}
+        run: timeout 170m node pipeline/fetch.js --event=全球总决赛 --all || rm -f site/data/matches/fetching.lock
       - name: Translate
         # Stops by itself when the free daily quotas run out.
         run: timeout 120m node pipeline/translate.js || true

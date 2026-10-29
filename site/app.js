@@ -112,7 +112,13 @@ function annotated(c) {
   });
 }
 
+function pics(c) {
+  if (!c.images?.length) return "";
+  return `<div class="pics">${c.images.map((src) => `<a href="${esc(src)}" target="_blank" rel="noopener noreferrer">${img(src, "", "Attached image")}</a>`).join("")}</div>`;
+}
+
 function textBlock(c) {
+  if (!c.zh.trim()) return "";
   const zh = `<p class="text">${esc(c.zh)}</p>`;
   const done = Boolean(c.en);
   const en = done ? `<p class="text">${annotated(c)}</p>` : `<p class="pending">Being translated…</p>`;
@@ -128,7 +134,7 @@ function comment(c, it, isReply) {
   const thread = c.thread ?? [];
   return `<div class="c">
     <div class="c-top">${about}${c.user ? `<span class="user">${esc(c.user)}</span>` : ""}${c.to ? `<span class="to">→ ${esc(c.to)}</span>` : ""}${stars}${c.game && !isReply ? `<span class="tag">${c.game}</span>` : ""}<span class="date">${c.time ? shortDate(c.time) : ""}</span></div>
-    ${textBlock(c)}
+    ${textBlock(c)}${pics(c)}
     <div class="c-foot"><span class="likes">${ICON.like}${c.likes.toLocaleString()}</span>
       <a href="${HUPU}/score-item/lol_item/${c.item ?? it.link ?? it.id}" target="_blank" rel="noopener">${ICON.link}Link</a>
       ${c.ip ? `<span>${PROVINCES[c.ip] ?? "Outside China"}</span>` : ""}</div>

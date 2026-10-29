@@ -159,6 +159,8 @@ main { min-width: 0; padding: 28px 56px 60px; max-width: 1100px; }
 .s4, .s2 { color: var(--bad); }
 .text { margin: 4px 0 0; white-space: pre-line; overflow-wrap: anywhere; }
 .split { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; }
+.pics { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.pics img { display: block; max-width: min(100%, 260px); max-height: 220px; border-radius: 6px; border: 1px solid var(--border); background: var(--muted); }
 .pending { color: var(--muted-fg); font-style: italic; font-size: 13.5px; margin: 4px 0 0; }
 .orig { color: var(--muted-fg); font-size: 13px; background: none; border: 0; padding: 0; margin-top: 4px; cursor: pointer; }
 .orig:hover { color: var(--fg); }

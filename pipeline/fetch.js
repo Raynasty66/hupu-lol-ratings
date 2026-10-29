@@ -15,6 +15,13 @@ const WORKERS = Number(args.workers ?? 3);
 
 const one = (v) => (Array.isArray(v) ? v[0] : v);
 
+// Pictures attached to a comment (memes, GIFs, screenshots), as Hupu image URLs.
+const images = (c) => {
+  const urls = (c.commentContentImages ?? []).filter((i) => i.commentContentType === "IMAGE").map((i) => i.commentContent);
+  return urls.length ? urls : undefined;
+};
+const hasContent = (c) => c.commentContent?.trim() || images(c);
+
 function comment(c) {
   return {
     id: String(c.commentId),
@@ -25,6 +32,7 @@ function comment(c) {
     ip: c.ipLocation || null,
     time: c.publishTime ?? null,
     replies: c.subCommentCount ?? 0,
+    images: images(c),
   };
 }
 
@@ -55,7 +63,7 @@ async function readJson(url, fallback) {
 async function topComments(node) {
   const all = await hupu.latest(node.bizType, node.bizId);
   const seen = new Set();
-  const top = all.filter((c) => c.commentContent?.trim() && !seen.has(c.commentId) && seen.add(c.commentId))
+  const top = all.filter((c) => hasContent(c) && !seen.has(c.commentId) && seen.add(c.commentId))
     .sort((a, b) => (b.lightCount ?? 0) - (a.lightCount ?? 0))
     .slice(0, TOP)
     .map(comment);
@@ -63,7 +71,7 @@ async function topComments(node) {
     if (!c.replies || !REPLIES) continue;
     const thread = await hupu.replies(node.bizType, node.bizId, c.id, Math.min(50, c.replies));
     c.thread = thread
-      .filter((r) => r.commentContent?.trim())
+      .filter(hasContent)
       .sort((a, b) => (b.lightCount ?? 0) - (a.lightCount ?? 0))
       .slice(0, REPLIES)
       .map((r) => ({ ...comment(r), to: String(r.parentCommentId) === c.id ? null : r.parentCommentUserName ?? null }))
