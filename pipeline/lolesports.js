@@ -35,6 +35,15 @@ async function schedule() {
   return events;
 }
 
+// Start time and series length of every Worlds match, in any state.
+export async function worldsMatches() {
+  const league = (await json(`${API}/getLeagues?hl=en-US`, HEADERS)).data.leagues.find((l) => l.slug === "worlds");
+  const s = (await json(`${API}/getSchedule?hl=en-US&leagueId=${league.id}`, HEADERS)).data.schedule.events;
+  return s.filter((e) => e.type === "match").map((e) => ({
+    start: Date.parse(e.startTime), bestOf: e.match?.strategy?.count ?? 1, teams: e.match?.teams?.map((t) => t.code) ?? [],
+  }));
+}
+
 // Team codes can differ slightly between Riot and Hupu (MKOI vs KOI), so one containing the other counts.
 const sameCode = (a, b) => { a = a.toUpperCase(); b = b.toUpperCase(); return a === b || a.includes(b) || b.includes(a); };
 const sameTeams = (a, b) => a.length === 2 && b.length === 2 && ((sameCode(a[0], b[0]) && sameCode(a[1], b[1])) || (sameCode(a[0], b[1]) && sameCode(a[1], b[0])));

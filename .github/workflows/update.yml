@@ -1,9 +1,7 @@
-name: Daily update
+name: Update
 
-# Every 8 hours, so finished games show up the same day.
+# Started by plan.yml when a match is due, or by hand.
 on:
-  schedule:
-    - cron: "30 */8 * * *"
   workflow_dispatch:
     inputs:
       all:
@@ -57,7 +55,7 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add site/data pipeline/nicknames.json
           git diff --cached --quiet && exit 0
-          git commit -m "Daily data update"
+          git commit -m "Data update"
           git pull --rebase -X theirs
           git push
       - name: Deploy

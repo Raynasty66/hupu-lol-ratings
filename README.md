@@ -19,7 +19,7 @@ Gemini Flash-Lite translates in 50-comment batches across parallel lanes (two mo
 Groq (Qwen 3.8 / gpt-oss) reviews finished translations; rejected ones are cleared and translated again
                      pipeline/translate.js --check
 
-GitHub Actions, daily: fetch ──> translate ──> check ──> retranslate rejects ──> commit ──> deploy to Cloudflare Workers
+GitHub Actions, when a match is due: fetch ──> translate ──> check ──> retranslate rejects ──> commit ──> deploy to Cloudflare Workers
 ```
 
 The site in `site/` is plain HTML, CSS and JavaScript with no build step.
@@ -60,7 +60,7 @@ Each builder has Gemini propose entries and Groq confirm them; only entries both
 
 ## Deploy
 
-`.github/workflows/update.yml` runs the whole pipeline daily on GitHub's machines and deploys. `.github/workflows/deploy.yml` redeploys when site code changes. Repository secrets:
+`.github/workflows/plan.yml` checks every 15 minutes with `pipeline/due.js`, which reads match times from Riot's lolesports schedule: a best-of-N match is due N hours after it starts. When one is due, or a finished match is missing, or nothing has run in 24 hours, it starts `.github/workflows/update.yml`, which runs the whole pipeline on GitHub's machines and deploys. `.github/workflows/deploy.yml` redeploys when site code changes. Repository secrets:
 
 - `GEMINI_API_KEY`, `GEMINI_API_KEY_2`, `GROQ_API_KEY`
 - `CLOUDFLARE_API_TOKEN` (from the "Edit Cloudflare Workers" template) and `CLOUDFLARE_ACCOUNT_ID`

@@ -1,0 +1,30 @@
+name: Check for finished games
+
+# Every 15 minutes; starts the update once a match is due (best-of-N: N hours after it starts).
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - id: due
+        run: node pipeline/due.js
+      - name: Start the update
+        if: steps.due.outputs.run == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          busy=$(gh run list --workflow update.yml --json status -q '[.[] | select(.status != "completed")] | length')
+          if [ "$busy" = 0 ]; then gh workflow run update.yml; else echo "An update is already running"; fi
