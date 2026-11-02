@@ -60,10 +60,12 @@ Each builder has Gemini propose entries and Groq confirm them; only entries both
 
 ## Deploy
 
-`.github/workflows/plan.yml` checks every 15 minutes with `pipeline/due.js`, which reads match times from Riot's lolesports schedule: a best-of-N match is due N hours after it starts. When one is due, or a finished match is missing, or nothing has run in 24 hours, it starts `.github/workflows/update.yml`, which runs the whole pipeline on GitHub's machines and deploys. `.github/workflows/deploy.yml` redeploys when site code changes. Repository secrets:
+Every 15 minutes the Cloudflare Worker (`worker.js`, a cron trigger) starts `.github/workflows/plan.yml`, which runs `pipeline/due.js`, which reads match times from Riot's lolesports schedule: a best-of-N match is due N hours after it starts. When one is due, or a finished match is missing, or nothing has run in 24 hours, it starts `.github/workflows/update.yml`, which runs the whole pipeline on GitHub's machines and deploys. `.github/workflows/deploy.yml` redeploys when site code changes. Repository secrets:
 
 - `GEMINI_API_KEY`, `GEMINI_API_KEY_2`, `GROQ_API_KEY`
 - `CLOUDFLARE_API_TOKEN` (from the "Edit Cloudflare Workers" template) and `CLOUDFLARE_ACCOUNT_ID`
+
+The Worker needs one secret of its own, `GITHUB_TOKEN`: a fine-grained GitHub token for this repository with Actions read and write, set with `npx wrangler secret put GITHUB_TOKEN`.
 
 ## Data
 

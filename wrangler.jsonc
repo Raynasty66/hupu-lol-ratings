@@ -1,7 +1,12 @@
 {
   "name": "hupu-lol-ratings",
   "compatibility_date": "2026-10-01",
+  "main": "worker.js",
   "assets": {
-    "directory": "./site"
+    "directory": "./site",
+    "binding": "ASSETS"
+  },
+  "triggers": {
+    "crons": ["*/15 * * * *"]
   }
 }

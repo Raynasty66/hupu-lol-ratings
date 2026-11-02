@@ -1,9 +1,10 @@
 name: Check for finished games
 
-# Every 15 minutes; starts the update once a match is due (best-of-N: N hours after it starts).
+# Started every 15 minutes by the Cloudflare Worker's timer (worker.js), with GitHub's own hourly timer as a backup.
+# Starts the update once a match is due (best-of-N: N hours after it starts).
 on:
   schedule:
-    - cron: "*/15 * * * *"
+    - cron: "7 * * * *"
   workflow_dispatch:
 
 permissions:
