@@ -197,6 +197,13 @@ async function main() {
           : CHECK ? await checkBatch(lane.model, job) : REVIEW ? await reviewBatch(lane.model, job) : await translateBatch(lane.model, job);
         ok += n;
         done += job.units.length;
+        // Comments a garbled or partial reply left out go back on the queue: first in halves, then one at a time.
+        const missing = CHECK || REVIEW || job.names ? [] : job.units.filter((u) => !u.ref.en || u.ref.problem);
+        if (missing.length && (job.tries ?? 0) < 2) {
+          const size = job.tries ? 1 : Math.max(5, Math.ceil(missing.length / 2));
+          for (let i = 0; i < missing.length; i += size) queue.push({ ...job, units: missing.slice(i, i + size), tries: (job.tries ?? 0) + 1 });
+          done -= missing.length;
+        }
         job.m.dirty = true;
         const rate = done / ((Date.now() - t0) / 60000);
         console.log(`  ${lane.name}/${lane.model.model}: ${n}/${job.units.length} | ${done}/${total} done, ${rate.toFixed(0)}/min`);
