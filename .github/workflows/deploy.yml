@@ -27,3 +27,8 @@ jobs:
           node-version: 22
       - if: env.CLOUDFLARE_API_TOKEN != ''
         run: npx --yes wrangler@4.149.0 deploy
+      - name: Give the Worker's timer its GitHub token
+        if: env.CLOUDFLARE_API_TOKEN != '' && env.SCHEDULER_TOKEN != ''
+        env:
+          SCHEDULER_TOKEN: ${{ secrets.SCHEDULER_TOKEN }}
+        run: printf '%s' "$SCHEDULER_TOKEN" | npx --yes wrangler@4.149.0 secret put GITHUB_TOKEN

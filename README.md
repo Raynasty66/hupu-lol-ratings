@@ -65,7 +65,7 @@ Every 15 minutes the Cloudflare Worker (`worker.js`, a cron trigger) starts `.gi
 - `GEMINI_API_KEY`, `GEMINI_API_KEY_2`, `GROQ_API_KEY`
 - `CLOUDFLARE_API_TOKEN` (from the "Edit Cloudflare Workers" template) and `CLOUDFLARE_ACCOUNT_ID`
 
-The Worker needs one secret of its own, `GITHUB_TOKEN`: a fine-grained GitHub token for this repository with Actions read and write, set with `npx wrangler secret put GITHUB_TOKEN`.
+The Worker needs one secret of its own, `GITHUB_TOKEN`: a fine-grained GitHub token for this repository with Actions read and write, stored as the repository secret `SCHEDULER_TOKEN`; `deploy.yml` copies it into the Worker.
 
 ## Data
 
