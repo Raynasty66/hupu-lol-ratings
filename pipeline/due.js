@@ -21,8 +21,8 @@ for (const m of await hupu.schedule()) {
     reasons.push(`${m.teams.map((t) => t.name).join(" vs ")} finished on Hupu but is not on the site`);
   }
 }
-// One run a day keeps translations and comment counts moving when no match is due.
-if (now - updated > 24 * HOUR) reasons.push("no update in 24 hours");
+// A run every 6 hours keeps translations and comment counts moving when no match is due.
+if (now - updated > 6 * HOUR) reasons.push("no update in 6 hours");
 
 console.log(reasons.length ? `Run: ${reasons.join("; ")}` : `Nothing due (last update ${new Date(updated).toISOString()})`);
 if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `run=${reasons.length > 0}\n`);
